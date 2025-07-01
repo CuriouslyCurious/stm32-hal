@@ -7,40 +7,37 @@ use core::{
 };
 
 use crate::{
-    pac::{self, RCC},
-    util::rcc_en_reset,
+    error::{Error, Result},
+    pac::RCC,
+    util::bounded_loop,
 };
 
 cfg_if! {
     if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
-        use crate::pac::{dma as dma1, DMA as DMA1};
+        use crate::{pac::{dma as dma1, DMA as DMA1}, util::rcc_en_reset};
     } else if #[cfg(feature = "f3x4")] {
         use crate::pac::{dma1, DMA1};
     }
     else {
-        use crate::pac::{dma1, dma2, DMA1, DMA2};
+        use crate::{pac::{dma1, dma2, DMA1, DMA2}, util::rcc_en_reset};
     }
 }
-
-// use embedded_dma::{ReadBuffer, WriteBuffer};
-use cfg_if::cfg_if;
+#[cfg(any(feature = "g0", feature = "wb", feature = "f3"))]
+// F4 family does not have a multipexer infront of the DMA.
 #[cfg(any(feature = "g0", feature = "g4", feature = "wl"))]
-use pac::DMAMUX;
+use crate::pac::DMAMUX;
 // todo: DMAMUX2 support (Not sure if WB has it, but H7 has both).
 #[cfg(any(feature = "l5", feature = "wb", feature = "h7"))]
-use pac::DMAMUX1 as DMAMUX;
+use crate::pac::DMAMUX1 as DMAMUX;
 #[cfg(feature = "h7")]
-use pac::DMAMUX2;
-use paste::paste;
+use crate::pac::DMAMUX2;
 
 // todo: Several sections of this are only correct for DMA1.
 
 /// Errors that can occur when performing DMA.
 #[non_exhaustive]
-#[derive(Debug, defmt::Format)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, defmt::Format)]
 pub enum DmaError {
-    /// Raised when MAX_ITERS is exceeded.
-    RegisterUnchanged,
     TransferError,
     #[cfg(any(feature = "h7", feature = "f4"))]
     FifoError,
@@ -643,7 +640,7 @@ macro_rules! set_ccr {
             $ccr.modify(|_, w| w.en().clear_bit());
             bounded_loop!(
                 $ccr.read().en().bit_is_set(),
-                DmaError::RegisterUnchanged
+                Error::RegisterUnchanged
             );
         }
 
@@ -674,7 +671,7 @@ macro_rules! set_ccr {
 
         if originally_enabled {
             $ccr.modify(|_, w| w.en().set_bit());
-            bounded_loop!($ccr.read().en().bit_is_clear(), DmaError::RegisterUnchanged);
+            bounded_loop!($ccr.read().en().bit_is_clear(), Error::RegisterUnchanged);
         }
     };
 }
@@ -687,7 +684,7 @@ macro_rules! enable_interrupt {
         let originally_enabled = $ccr.read().en().bit_is_set();
         if originally_enabled {
             $ccr.modify(|_, w| w.en().clear_bit());
-            bounded_loop!($ccr.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+            bounded_loop!($ccr.read().en().bit_is_set(), Error::RegisterUnchanged);
         }
 
         $ccr.modify(|_, w| match $interrupt_type {
@@ -698,7 +695,7 @@ macro_rules! enable_interrupt {
 
         if originally_enabled {
             $ccr.modify(|_, w| w.en().set_bit());
-            bounded_loop!($ccr.read().en().bit_is_clear(), DmaError::RegisterUnchanged);
+            bounded_loop!($ccr.read().en().bit_is_clear(), Error::RegisterUnchanged);
         }
     };
 }
@@ -711,7 +708,7 @@ macro_rules! disable_interrupt {
         let originally_disabled = $ccr.read().en().bit_is_set();
         if originally_disabled {
             $ccr.modify(|_, w| w.en().clear_bit());
-            bounded_loop!($ccr.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+            bounded_loop!($ccr.read().en().bit_is_set(), Error::RegisterUnchanged);
         }
 
         $ccr.modify(|_, w| match $interrupt_type {
@@ -722,7 +719,7 @@ macro_rules! disable_interrupt {
 
         if originally_disabled {
             $ccr.modify(|_, w| w.en().set_bit());
-            bounded_loop!($ccr.read().en().bit_is_clear(), DmaError::RegisterUnchanged);
+            bounded_loop!($ccr.read().en().bit_is_clear(), Error::RegisterUnchanged);
         }
     };
 }
@@ -808,7 +805,7 @@ where
         periph_size: DataSize,
         mem_size: DataSize,
         cfg: ChannelCfg,
-    ) -> Result<(), DmaError> {
+    ) -> Result<()> {
         cfg_channel(
             &mut self.regs,
             channel,
@@ -835,7 +832,7 @@ where
         periph_size: DataSize,
         mem_size: DataSize,
         cfg: ChannelCfg,
-    ) -> Result<(), DmaError> {
+    ) -> Result<()> {
         cfg_channel(
             &mut self.regs,
             channel,
@@ -855,16 +852,12 @@ where
     }
 
     /// Stop a DMA transfer, if in progress.
-    pub fn stop(&mut self, channel: DmaChannel) -> Result<(), DmaError> {
+    pub fn stop(&mut self, channel: DmaChannel) -> Result<()> {
         stop_internal(&mut self.regs, channel)
     }
 
     /// Clear an interrupt flag.
-    pub fn clear_interrupt(
-        &mut self,
-        channel: DmaChannel,
-        interrupt: DmaInterrupt,
-    ) -> Result<(), DmaError> {
+    pub fn clear_interrupt(&mut self, channel: DmaChannel, interrupt: DmaInterrupt) -> Result<()> {
         clear_interrupt_internal(&mut self.regs, channel, interrupt)
     }
 
@@ -902,11 +895,7 @@ where
     }
 
     /// Enable a specific type of interrupt.
-    pub fn enable_interrupt(
-        &mut self,
-        channel: DmaChannel,
-        interrupt: DmaInterrupt,
-    ) -> Result<(), DmaError> {
+    pub fn enable_interrupt(&mut self, channel: DmaChannel, interrupt: DmaInterrupt) -> Result<()> {
         enable_interrupt_internal(&mut self.regs, channel, interrupt)
     }
 
@@ -917,7 +906,7 @@ where
         &mut self,
         channel: DmaChannel,
         interrupt: DmaInterrupt,
-    ) -> Result<(), DmaError> {
+    ) -> Result<()> {
         // Can only be set when the channel is disabled.
         // todo: Is this true for disabling interrupts true, re the channel must be disabled?
         let cr = &self.regs.st[channel as usize].cr;
@@ -926,7 +915,7 @@ where
 
         if originally_enabled {
             cr.modify(|_, w| w.en().clear_bit());
-            bounded_loop!(cr.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+            bounded_loop!(cr.read().en().bit_is_set(), Error::RegisterUnchanged);
         }
 
         match interrupt {
@@ -941,7 +930,7 @@ where
 
         if originally_enabled {
             cr.modify(|_, w| w.en().set_bit());
-            bounded_loop!(cr.read().en().bit_is_clear(), DmaError::RegisterUnchanged);
+            bounded_loop!(cr.read().en().bit_is_clear(), Error::RegisterUnchanged);
         }
         Ok(())
     }
@@ -960,7 +949,7 @@ pub fn cfg_channel<D>(
     periph_size: DataSize,
     mem_size: DataSize,
     cfg: ChannelCfg,
-) -> Result<(), DmaError>
+) -> Result<()>
 where
     D: Deref<Target = dma1::RegisterBlock>,
 {
@@ -1432,7 +1421,7 @@ pub fn cfg_channel<D>(
     periph_size: DataSize,
     mem_size: DataSize,
     cfg: ChannelCfg,
-) -> Result<(), DmaError>
+) -> Result<()>
 where
     D: Deref<Target = dma1::RegisterBlock>,
 {
@@ -1446,7 +1435,7 @@ where
     channel.cr.modify(|_, w| w.en().clear_bit());
     bounded_loop!(
         channel.cr.read().en().bit_is_set(),
-        DmaError::RegisterUnchanged
+        Error::RegisterUnchanged
     );
 
     // H743 RM Section 15.3.19 The following sequence is needed to configure a DMA stream x:
@@ -1487,7 +1476,7 @@ where
         channel.cr.modify(|_, w| w.en().clear_bit());
         bounded_loop!(
             channel.cr.read().en().bit_is_set(),
-            DmaError::RegisterUnchanged
+            Error::RegisterUnchanged
         );
     }
 
@@ -1531,7 +1520,7 @@ where
         channel.cr.modify(|_, w| w.en().set_bit());
         bounded_loop!(
             channel.cr.read().en().bit_is_clear(),
-            DmaError::RegisterUnchanged
+            Error::RegisterUnchanged
         );
     }
 
@@ -1539,7 +1528,8 @@ where
 }
 
 /// Stop a DMA transfer, if in progress.
-fn stop_internal<D>(regs: &mut D, channel: DmaChannel) -> Result<(), DmaError>
+#[cfg(not(feature = "h7"))]
+fn stop_internal<D>(regs: &mut D, channel: DmaChannel) -> Result<()>
 where
     D: Deref<Target = dma1::RegisterBlock>,
 {
@@ -1550,15 +1540,15 @@ where
     // To correctly stop and disable a channel, the software clears the EN bit of the DMA_CCRx
     // register.
 
-    let ccr = match channel {
+    match channel {
         DmaChannel::C1 => {
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
                     regs.ch1.cr.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ch1.cr.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ch1.cr.read().en().bit_is_set(), Error::RegisterUnchanged);
                 } else {
                     regs.ccr1.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ccr1.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ccr1.read().en().bit_is_set(), Error::RegisterUnchanged);
                 }
             }
         }
@@ -1566,10 +1556,10 @@ where
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
                     regs.ch2.cr.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ch2.cr.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ch2.cr.read().en().bit_is_set(), Error::RegisterUnchanged);
                 } else {
                     regs.ccr2.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ccr2.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ccr2.read().en().bit_is_set(), Error::RegisterUnchanged);
                 }
             }
         }
@@ -1577,10 +1567,10 @@ where
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
                     regs.ch3.cr.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ch3.cr.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ch3.cr.read().en().bit_is_set(), Error::RegisterUnchanged);
                 } else {
                     regs.ccr3.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ccr3.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ccr3.read().en().bit_is_set(), Error::RegisterUnchanged);
                 }
             }
         }
@@ -1588,10 +1578,10 @@ where
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
                     regs.ch4.cr.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ch4.cr.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ch4.cr.read().en().bit_is_set(), Error::RegisterUnchanged);
                 } else {
                     regs.ccr4.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ccr4.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ccr4.read().en().bit_is_set(), Error::RegisterUnchanged);
                 }
             }
         }
@@ -1599,10 +1589,10 @@ where
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
                     regs.ch5.cr.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ch5.cr.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ch5.cr.read().en().bit_is_set(), Error::RegisterUnchanged);
                 } else {
                     regs.ccr5.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ccr5.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ccr5.read().en().bit_is_set(), Error::RegisterUnchanged);
                 }
             }
         }
@@ -1611,10 +1601,10 @@ where
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
                     regs.ch6.cr.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ch6.cr.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ch6.cr.read().en().bit_is_set(), Error::RegisterUnchanged);
                 } else {
                     regs.ccr6.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ccr6.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ccr6.read().en().bit_is_set(), Error::RegisterUnchanged);
                 }
             }
         }
@@ -1623,24 +1613,19 @@ where
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
                     regs.ch7.cr.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ch7.cr.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ch7.cr.read().en().bit_is_set(), Error::RegisterUnchanged);
                 } else {
                     regs.ccr7.modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(regs.ccr7.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(regs.ccr7.read().en().bit_is_set(), Error::RegisterUnchanged);
                 }
             }
         }
         #[cfg(any(feature = "l5", feature = "g4"))]
         DmaChannel::C8 => {
             regs.ccr8.modify(|_, w| w.en().clear_bit());
-            bounded_loop!(
-                regs.ccr8.read().en().bit_is_set(),
-                DmaError::RegisterUnchanged
-            );
+            bounded_loop!(regs.ccr8.read().en().bit_is_set(), Error::RegisterUnchanged);
         }
     };
-
-    Ok(())
 
     // The software secures that no pending request from the peripheral is served by the
     // DMA controller before the transfer completion.
@@ -1654,11 +1639,12 @@ where
     // When a channel transfer error occurs, the EN bit of the DMA_CCRx register is cleared by
     // hardware. This EN bit can not be set again by software to re-activate the channel x, until the
     // TEIFx bit of the DMA_ISR register is set
+    Ok(())
 }
 
 /// Stop a DMA transfer, if in progress.
 #[cfg(feature = "h7")]
-fn stop_internal<D>(regs: &mut D, channel: DmaChannel) -> Result<(), DmaError>
+fn stop_internal<D>(regs: &mut D, channel: DmaChannel) -> Result<()>
 where
     D: Deref<Target = dma1::RegisterBlock>,
 {
@@ -1675,7 +1661,7 @@ where
 
     let cr = &regs.st[channel as usize].cr;
     cr.modify(|_, w| w.en().clear_bit());
-    bounded_loop!(cr.read().en().bit_is_set(), DmaError::RegisterUnchanged);
+    bounded_loop!(cr.read().en().bit_is_set(), Error::RegisterUnchanged);
 
     Ok(())
 
@@ -1690,7 +1676,7 @@ where
 }
 
 /// Stop a DMA transfer, if in progress.
-pub fn stop(periph: DmaPeriph, channel: DmaChannel) -> Result<(), DmaError> {
+pub fn stop(periph: DmaPeriph, channel: DmaChannel) -> Result<()> {
     match periph {
         DmaPeriph::Dma1 => {
             let mut regs = unsafe { &(*DMA1::ptr()) };
@@ -1712,7 +1698,7 @@ fn clear_interrupt_internal<D>(
     regs: &mut D,
     channel: DmaChannel,
     interrupt: DmaInterrupt,
-) -> Result<(), DmaError>
+) -> Result<()>
 where
     D: Deref<Target = dma1::RegisterBlock>,
 {
@@ -1879,7 +1865,7 @@ fn enable_interrupt_internal<D>(
     regs: &mut D,
     channel: DmaChannel,
     interrupt: DmaInterrupt,
-) -> Result<(), DmaError>
+) -> Result<()>
 where
     D: Deref<Target = dma1::RegisterBlock>,
 {
@@ -1944,18 +1930,19 @@ where
         DmaChannel::C7 => {
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
-                    &regs.ch7.cr
+                    enable_interrupt!(regs.ch7.cr, interrupt);
                 } else {
-                    &regs.ccr7
+                    enable_interrupt!(regs.ccr7, interrupt);
                 }
             }
         }
         #[cfg(any(feature = "l5", feature = "g4"))]
         DmaChannel::C8 => {
-            &regs.ccr8;
+            enable_interrupt!(regs.ccr8, interrupt);
         }
     };
-    enable_interrupt!(ccr, interrupt)
+
+    Ok(())
 }
 
 /// Disable an interrupt.
@@ -1964,7 +1951,7 @@ fn disable_interrupt_internal<D>(
     regs: &mut D,
     channel: DmaChannel,
     interrupt: DmaInterrupt,
-) -> Result<(), DmaError>
+) -> Result<()>
 where
     D: Deref<Target = dma1::RegisterBlock>,
 {
@@ -1973,45 +1960,45 @@ where
         DmaChannel::C1 => {
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
-                    disable_interrupt!(regs.ch1.cr, interrupt)
+                    disable_interrupt!(regs.ch1.cr, interrupt);
                 } else {
-                    disable_interrupt!(regs.ccr1, interrupt)
+                    disable_interrupt!(regs.ccr1, interrupt);
                 }
             }
         }
         DmaChannel::C2 => {
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
-                    disable_interrupt!(regs.ch2.cr, interrupt)
+                    disable_interrupt!(regs.ch2.cr, interrupt);
                 } else {
-                    disable_interrupt!(regs.ccr2, interrupt)
+                    disable_interrupt!(regs.ccr2, interrupt);
                 }
             }
         }
         DmaChannel::C3 => {
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
-                    disable_interrupt!(regs.ch3.cr, interrupt)
+                    disable_interrupt!(regs.ch3.cr, interrupt);
                 } else {
-                    disable_interrupt!(regs.ccr3, interrupt)
+                    disable_interrupt!(regs.ccr3, interrupt);
                 }
             }
         }
         DmaChannel::C4 => {
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
-                    disable_interrupt!(regs.ch4.cr, interrupt)
+                    disable_interrupt!(regs.ch4.cr, interrupt);
                 } else {
-                    disable_interrupt!(regs.ccr4, interrupt)
+                    disable_interrupt!(regs.ccr4, interrupt);
                 }
             }
         }
         DmaChannel::C5 => {
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
-                    disable_interrupt!(regs.ch5.cr, interrupt)
+                    disable_interrupt!(regs.ch5.cr, interrupt);
                 } else {
-                    disable_interrupt!(regs.ccr5, interrupt)
+                    disable_interrupt!(regs.ccr5, interrupt);
                 }
             }
         }
@@ -2019,9 +2006,9 @@ where
         DmaChannel::C6 => {
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
-                    disable_interrupt!(regs.ch6.cr, interrupt)
+                    disable_interrupt!(regs.ch6.cr, interrupt);
                 } else {
-                    disable_interrupt!(regs.ccr6, interrupt)
+                    disable_interrupt!(regs.ccr6, interrupt);
                 }
             }
         }
@@ -2029,14 +2016,16 @@ where
         DmaChannel::C7 => {
             cfg_if! {
                 if #[cfg(any(feature = "f3", feature = "g0"))] {
-                    disable_interrupt!(regs.ch7.cr, interrupt)
+                    disable_interrupt!(regs.ch7.cr, interrupt);
                 } else {
-                    disable_interrupt!(regs.ccr7, interrupt)
+                    disable_interrupt!(regs.ccr7, interrupt);
                 }
             }
         }
         #[cfg(any(feature = "l5", feature = "g4"))]
-        DmaChannel::C8 => disable_interrupt!(regs.ccr8, interrupt),
+        DmaChannel::C8 => {
+            disable_interrupt!(regs.ccr8, interrupt);
+        }
     };
 
     Ok(())
@@ -2047,7 +2036,7 @@ fn enable_interrupt_internal<D>(
     regs: &mut D,
     channel: DmaChannel,
     interrupt: DmaInterrupt,
-) -> Result<(), DmaError>
+) -> Result<()>
 where
     D: Deref<Target = dma1::RegisterBlock>,
 {
@@ -2071,7 +2060,7 @@ fn disable_interrupt_internal<D>(
     regs: &mut D,
     channel: DmaChannel,
     interrupt: DmaInterrupt,
-) -> Result<(), DmaError>
+) -> Result<()>
 where
     D: Deref<Target = dma1::RegisterBlock>,
 {
@@ -2097,7 +2086,7 @@ pub fn enable_interrupt(
     periph: DmaPeriph,
     channel: DmaChannel,
     interrupt: DmaInterrupt,
-) -> Result<(), DmaError> {
+) -> Result<()> {
     match periph {
         DmaPeriph::Dma1 => {
             let mut regs = unsafe { &(*DMA1::ptr()) };
@@ -2120,7 +2109,7 @@ pub fn disable_interrupt(
     periph: DmaPeriph,
     channel: DmaChannel,
     interrupt: DmaInterrupt,
-) -> Result<(), DmaError> {
+) -> Result<()> {
     match periph {
         DmaPeriph::Dma1 => {
             let mut regs = unsafe { &(*DMA1::ptr()) };
@@ -2143,7 +2132,7 @@ pub fn clear_interrupt(
     periph: DmaPeriph,
     channel: DmaChannel,
     interrupt: DmaInterrupt,
-) -> Result<(), DmaError> {
+) -> Result<()> {
     match periph {
         DmaPeriph::Dma1 => {
             let mut regs = unsafe { &(*DMA1::ptr()) };
@@ -2364,7 +2353,7 @@ macro_rules! make_chan_struct {
                     periph_size: DataSize,
                     mem_size: DataSize,
                     cfg: ChannelCfg,
-                ) -> Result<(), DmaError> {
+                ) -> Result<()> {
                     cfg_channel(
                         &mut self.regs(),
                         DmaChannel::[<C $ch>],
@@ -2390,7 +2379,7 @@ macro_rules! make_chan_struct {
                     periph_size: DataSize,
                     mem_size: DataSize,
                     cfg: ChannelCfg,
-                ) -> Result<(), DmaError> {
+                ) -> Result<()> {
                     cfg_channel(
                         &mut self.regs(),
                         DmaChannel::[<C $ch>],
@@ -2405,20 +2394,20 @@ macro_rules! make_chan_struct {
                 }
 
                 /// Stop a DMA transfer, if in progress.
-                pub fn stop(&mut self) -> Result<(), DmaError> {
+                pub fn stop(&mut self) -> Result<()> {
                     self.ccr().modify(|_, w| w.en().clear_bit());
-                    bounded_loop!(self.ccr().read().en().bit_is_set(), DmaError::RegisterUnchanged);
+                    bounded_loop!(self.ccr().read().en().bit_is_set(), Error::RegisterUnchanged);
 
                     Ok(())
                 }
 
                 /// Enable a specific type of interrupt.
-                pub fn enable_interrupt(&mut self, interrupt: DmaInterrupt) -> Result<(), DmaError> {
+                pub fn enable_interrupt(&mut self, interrupt: DmaInterrupt) -> Result<()> {
                     enable_interrupt_internal(&mut self.regs(), DmaChannel::[<C $ch>], interrupt)
                 }
 
                 /// Clear an interrupt flag.
-                pub fn clear_interrupt(&mut self, interrupt: DmaInterrupt) -> Result<(), DmaError> {
+                pub fn clear_interrupt(&mut self, interrupt: DmaInterrupt) -> Result<()> {
                     clear_interrupt_internal(&mut self.regs(), DmaChannel::[<C $ch>], interrupt)
                 }
                 // todo: Other methods.
