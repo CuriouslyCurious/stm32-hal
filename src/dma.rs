@@ -61,7 +61,13 @@ pub enum DmaPeriph {
 
 #[derive(Copy, Clone)]
 #[repr(usize)]
-#[cfg(not(any(feature = "h7", feature = "wl", feature = "wb", feature = "g0")))]
+#[cfg(not(any(
+    feature = "h7",
+    feature = "f4",
+    feature = "wl",
+    feature = "wb",
+    feature = "g0"
+)))]
 /// A list of DMA input sources. The integer values represent their DMAMUX register value, on
 /// MCUs that use this. G4 RM, Table 91: DMAMUX: Assignment of multiplexer inputs to resources.
 pub enum DmaInput {
@@ -431,6 +437,7 @@ pub enum DmaInput2 {
     Sai4B = 16,
 }
 
+#[cfg(not(feature = "f4"))]
 impl DmaInput {
     #[cfg(any(feature = "f3", feature = "l4"))]
     /// Select the hard set channel associated with a given input source. See L44 RM, Table 41.
@@ -557,8 +564,8 @@ pub enum Priority {
 /// u8 representation is used to index registers on H7 PAC (And hopefully on future PACs if they
 /// adopt H7's approach)
 pub enum DmaChannel {
-    // H7 calls these Streams. We use the `Channel` name for consistency.
-    #[cfg(feature = "h7")]
+    // H7 and F4 calls these Streams. We use the `Channel` name for consistency.
+    #[cfg(any(feature = "h7", feature = "f4"))]
     C0 = 0,
     C1 = 1,
     C2 = 2,
@@ -623,16 +630,16 @@ pub enum DmaInterrupt {
     TransferError,
     HalfTransfer,
     TransferComplete,
-    #[cfg(feature = "h7")]
+    #[cfg(any(feature = "h7", feature = "f4"))]
     DirectModeError,
-    #[cfg(feature = "h7")]
+    #[cfg(any(feature = "h7", feature = "f4"))]
     FifoError,
 }
 
 /// Reduce DRY over channels when configuring a channel's CCR.
 /// We must use a macro here, since match arms balk at the incompatible
 /// types of `CCR1`, `CCR2` etc.
-#[cfg(not(feature = "h7"))]
+#[cfg(any(feature = "h7", feature = "f4"))]
 macro_rules! set_ccr {
     ($ccr:expr, $priority:expr, $direction:expr, $circular:expr, $periph_incr:expr, $mem_incr:expr, $periph_size:expr, $mem_size:expr) => {
         // "The register fields/bits MEM2MEM, PL[1:0], MSIZE[1:0], PSIZE[1:0], MINC, PINC, and DIR
@@ -676,7 +683,7 @@ macro_rules! set_ccr {
 }
 
 /// Reduce DRY over channels when configuring a channel's interrupts.
-#[cfg(not(feature = "h7"))]
+#[cfg(not(any(feature = "h7", feature = "f4")))]
 macro_rules! enable_interrupt {
     ($ccr:expr, $interrupt_type:expr) => {
         // "It must not be written when the channel is enabled (EN = 1)."
@@ -700,7 +707,7 @@ macro_rules! enable_interrupt {
 }
 
 /// Reduce DRY over channels when configuring a channel's interrupts.
-#[cfg(not(feature = "h7"))]
+#[cfg(not(any(feature = "h7", feature = "f4")))]
 macro_rules! disable_interrupt {
     ($ccr:expr, $interrupt_type:expr) => {
         // "It must not be written when the channel is disabled (EN = 1)."
@@ -781,7 +788,7 @@ where
         Self { regs }
     }
 
-    #[cfg(not(feature = "h7"))] // due to num_data size diff
+    #[cfg(not(any(feature = "h7", feature = "f4")))] // due to num_data size diff
     /// Configure a DMA channel. See L4 RM 0394, section 11.4.4. Sets the Transfer Complete
     /// interrupt. Note that this fn has been (perhaps) depreciated by the standalone fn.
     pub fn cfg_channel(
@@ -808,7 +815,7 @@ where
         )
     }
 
-    #[cfg(feature = "h7")]
+    #[cfg(any(feature = "h7", feature = "f4"))]
     /// Configure a DMA channel. See L4 RM 0394, section 11.4.4. Sets the Transfer Complete
     /// interrupt. Note that this fn has been (perhaps) depreciated by the standalone fn.
     pub fn cfg_channel(
@@ -851,7 +858,7 @@ where
     }
 
     // todo: G0 removed from this fn due to a bug introduced in PAC 0.13
-    #[cfg(not(any(feature = "h7", feature = "g0")))]
+    #[cfg(not(any(feature = "h7", feature = "g0", feature = "f4")))]
     pub fn transfer_is_complete(&mut self, channel: DmaChannel) -> bool {
         let isr_val = self.regs.isr.read();
         match channel {
@@ -869,7 +876,7 @@ where
         }
     }
 
-    #[cfg(feature = "h7")]
+    #[cfg(any(feature = "h7", feature = "f4"))]
     pub fn transfer_is_complete(&mut self, channel: DmaChannel) -> bool {
         match channel {
             DmaChannel::C0 => self.regs.lisr.read().tcif0().bit_is_set(),
@@ -890,7 +897,7 @@ where
 
     /// Disable a specific type of interrupt.
     /// todo: Non-H7 version too!
-    #[cfg(feature = "h7")]
+    #[cfg(any(feature = "h7", feature = "f4"))]
     pub fn disable_interrupt(&mut self, channel: DmaChannel, interrupt: DmaInterrupt) {
         // Can only be set when the channel is disabled.
         // todo: Is this true for disabling interrupts true, re the channel must be disabled?
@@ -922,7 +929,7 @@ where
 
 /// Configure a DMA channel. See L4 RM 0394, section 11.4.4. Sets the Transfer Complete
 /// interrupt. This is the function called by various module `read_dma` and `write_dma` functions.
-#[cfg(not(feature = "h7"))]
+#[cfg(not(any(feature = "h7", feature = "f4")))]
 pub fn cfg_channel<D>(
     regs: &mut D,
     channel: DmaChannel,
@@ -1361,7 +1368,7 @@ pub fn cfg_channel<D>(
 
 /// Configure a DMA channel. See L4 RM 0394, section 11.4.4. Sets the Transfer Complete
 /// interrupt. This is the function called by various module `read_dma` and `write_dma` functions.
-#[cfg(feature = "h7")]
+#[cfg(any(feature = "h7", feature = "f4"))]
 pub fn cfg_channel<D>(
     regs: &mut D,
     channel: DmaChannel,
@@ -1474,7 +1481,7 @@ pub fn cfg_channel<D>(
 }
 
 /// Stop a DMA transfer, if in progress.
-#[cfg(not(feature = "h7"))]
+#[cfg(not(any(feature = "h7", feature = "f4")))]
 fn stop_internal<D>(regs: &mut D, channel: DmaChannel)
 where
     D: Deref<Target = dma1::RegisterBlock>,
@@ -1589,7 +1596,7 @@ where
 }
 
 /// Stop a DMA transfer, if in progress.
-#[cfg(feature = "h7")]
+#[cfg(any(feature = "h7", feature = "f4"))]
 fn stop_internal<D>(regs: &mut D, channel: DmaChannel)
 where
     D: Deref<Target = dma1::RegisterBlock>,
@@ -1683,7 +1690,7 @@ where
                     DmaInterrupt::TransferComplete => w.tcif8().set_bit(),
                 }
             });
-        } else if #[cfg(feature = "h7")] {
+        } else if #[cfg(any(feature = "h7", feature = "f4"))] {
             match channel {
                 DmaChannel::C0 => match interrupt {
                     DmaInterrupt::TransferError => regs.lifcr.write(|w| w.cteif0().set_bit()),
@@ -1794,7 +1801,7 @@ where
 }
 
 /// Enable an interrupt.
-#[cfg(not(feature = "h7"))]
+#[cfg(not(any(feature = "h7", feature = "f4")))]
 fn enable_interrupt_internal<D>(regs: &mut D, channel: DmaChannel, interrupt: DmaInterrupt)
 where
     D: Deref<Target = dma1::RegisterBlock>,
@@ -1882,7 +1889,7 @@ where
 }
 
 /// Disable an interrupt.
-#[cfg(not(feature = "h7"))]
+#[cfg(not(any(feature = "h7", feature = "f4")))]
 fn disable_interrupt_internal<D>(regs: &mut D, channel: DmaChannel, interrupt: DmaInterrupt)
 where
     D: Deref<Target = dma1::RegisterBlock>,
@@ -1969,7 +1976,7 @@ where
     };
 }
 
-#[cfg(feature = "h7")]
+#[cfg(any(feature = "h7", feature = "f4"))]
 fn enable_interrupt_internal<D>(regs: &mut D, channel: DmaChannel, interrupt: DmaInterrupt)
 where
     D: Deref<Target = dma1::RegisterBlock>,
@@ -1988,7 +1995,7 @@ where
     }
 }
 
-#[cfg(feature = "h7")]
+#[cfg(any(feature = "h7", feature = "f4"))]
 fn disable_interrupt_internal<D>(regs: &mut D, channel: DmaChannel, interrupt: DmaInterrupt)
 where
     D: Deref<Target = dma1::RegisterBlock>,
@@ -2233,13 +2240,13 @@ macro_rules! make_chan_struct {
                     unsafe { &(*[<DMA $periph>]::ptr())}
                 }
 
-                #[cfg(feature = "h7")]
+                #[cfg(any(feature = "h7", feature = "f4"))]
                 fn ccr(&self) -> &[<dma $periph>]::st::CR {
                 // fn ccr(&self) -> &u8 {
                     &self.regs().st[$ch].cr
                 }
 
-                #[cfg(not(any(feature = "h7", feature = "f3", feature = "g0")))]
+                #[cfg(not(any(feature = "h7", feature = "f4", feature = "f3", feature = "g0")))]
                 fn ccr(&self) -> &[<dma $periph>]::[<CCR $ch>] {
                     &self.regs().[<ccr $ch>]
                 }
@@ -2250,7 +2257,7 @@ macro_rules! make_chan_struct {
                     &self.regs().[<ch $ch>].cr
                 }
 
-                #[cfg(not(feature = "h7"))] // due to num_data size diff
+                #[cfg(not(any(feature = "h7", feature = "f4")))] // due to num_data size diff
                 /// Configure a DMA channel. See L4 RM 0394, section 11.4.4. Sets the Transfer Complete
                 /// interrupt. Note that this fn has been (perhaps) depreciated by the standalone fn.
                 pub fn cfg_channel(
@@ -2276,7 +2283,7 @@ macro_rules! make_chan_struct {
                     )
                 }
 
-                #[cfg(feature = "h7")]
+                #[cfg(any(feature = "h7", feature = "f4"))]
                 /// Configure a DMA channel. See L4 RM 0394, section 11.4.4. Sets the Transfer Complete
                 /// interrupt. Note that this fn has been (perhaps) depreciated by the standalone fn.
                 pub fn cfg_channel(
@@ -2330,7 +2337,7 @@ macro_rules! make_chan_struct {
 // Note: G0 is limited, eg for some variants only up to DMA1, ch5.
 cfg_if! {
     if #[cfg(not(any(feature = "f3", feature = "g0")))] {
-        #[cfg(feature = "h7")]
+        #[cfg(any(feature = "h7", feature = "f4"))]
         make_chan_struct!(1, 0);
         make_chan_struct!(1, 1);
         make_chan_struct!(1, 2);

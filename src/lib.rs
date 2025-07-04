@@ -397,7 +397,7 @@ pub mod dac;
 )))]
 pub mod dfsdm;
 
-#[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))]
+#[cfg(not(any(feature = "l552", feature = "h5")))]
 pub mod dma;
 
 #[cfg(all(feature = "h7", feature = "net"))]
