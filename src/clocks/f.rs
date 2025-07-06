@@ -2,7 +2,7 @@ use cfg_if::cfg_if;
 
 use crate::{
     clocks::RccError,
-    pac::{self, FLASH, RCC},
+    pac::{FLASH, RCC},
     util::rcc_en_reset,
 };
 
@@ -20,6 +20,8 @@ cfg_if! {
         }
 
         impl PllSrc {
+            // todo: Use this function?
+            #[allow(dead_code)]
             /// Required instead of u8 repr due to numerical value on non-uniform discrim being experimental.
             /// (ie, can't set on `Pll(Pllsrc)`.
             fn bits(&self) -> u8 {
@@ -481,7 +483,7 @@ impl Clocks {
             w.hsebyp().bit(self.hse_bypass)
         });
 
-        if let InputSrc::Pll(pll_src) = self.input_src {
+        if let InputSrc::Pll(_pll_src) = self.input_src {
             // Turn off the PLL: Required for modifying some of the settings below.
             rcc.cr.modify(|_, w| w.pllon().off());
             // Wait for the PLL to no longer be ready before executing certain writes.
@@ -496,13 +498,13 @@ impl Clocks {
                             w.pllmul().bits(self.pll_mul as u8)
                         } else {
                             w.pllmul().bits(self.pll_mul as u8);
-                            unsafe { w.pllsrc().bits(pll_src.bits()) } // eg: Set HSE as PREDIV1 entry.
+                            unsafe { w.pllsrc().bits(_pll_src.bits()) } // eg: Set HSE as PREDIV1 entry.
                         }
                     }
                 });
                 } else if #[cfg(feature = "f4")] {
                     rcc.pllcfgr.modify(|_, w| unsafe {
-                        w.pllsrc().bit(pll_src.bits() != 0);
+                        w.pllsrc().bit(_pll_src.bits() != 0);
                         w.plln().bits(self.plln);
                         w.pllm().bits(self.pllm);
                         w.pllp().bits(self.pllp as u8);

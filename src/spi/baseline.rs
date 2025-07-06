@@ -259,7 +259,7 @@ where
     pub unsafe fn read_dma(
         &mut self,
         buf: &mut [u8],
-        channel: DmaChannel,
+        _channel: DmaChannel,
         channel_cfg: ChannelCfg,
         dma_periph: dma::DmaPeriph,
     ) {
@@ -270,7 +270,7 @@ where
         self.regs.cr2.modify(|_, w| w.rxdmaen().set_bit());
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let channel = R::read_chan();
+        let _channel = R::read_chan();
         #[cfg(feature = "l4")]
         let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
         #[cfg(feature = "l4")]
@@ -284,7 +284,7 @@ where
                 let mut regs = unsafe { &(*DMA1::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     periph_addr,
                     ptr as u32,
                     num_data,
@@ -299,7 +299,7 @@ where
                 let mut regs = unsafe { &(*pac::DMA2::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     periph_addr,
                     ptr as u32,
                     num_data,
@@ -321,7 +321,7 @@ where
     pub unsafe fn write_dma(
         &mut self,
         buf: &[u8],
-        channel: DmaChannel,
+        _channel: DmaChannel,
         channel_cfg: ChannelCfg,
         dma_periph: dma::DmaPeriph,
     ) {
@@ -346,7 +346,7 @@ where
 
         // 2. Enable DMA streams for Tx and Rx in DMA registers, if the streams are used.
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let channel = R::write_chan();
+        let _channel = R::write_chan();
         #[cfg(feature = "l4")]
         let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
         #[cfg(feature = "l4")]
@@ -360,7 +360,7 @@ where
                 let mut regs = unsafe { &(*DMA1::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     periph_addr,
                     ptr as u32,
                     num_data,
@@ -375,7 +375,7 @@ where
                 let mut regs = unsafe { &(*pac::DMA2::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     periph_addr,
                     ptr as u32,
                     num_data,
@@ -401,8 +401,8 @@ where
         &mut self,
         buf_write: &[u8],
         buf_read: &mut [u8],
-        channel_write: DmaChannel,
-        channel_read: DmaChannel,
+        _channel_write: DmaChannel,
+        _channel_read: DmaChannel,
         channel_cfg_write: ChannelCfg,
         channel_cfg_read: ChannelCfg,
         dma_periph: dma::DmaPeriph,
@@ -426,14 +426,14 @@ where
         self.regs.cr2.modify(|_, w| w.rxdmaen().set_bit());
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let channel_write = R::write_chan();
+        let _channel_write = R::write_chan();
         #[cfg(feature = "l4")]
         let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
         #[cfg(feature = "l4")]
         R::write_sel(&mut dma_regs);
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let channel_read = R::read_chan();
+        let _channel_read = R::read_chan();
         #[cfg(feature = "l4")]
         let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
         #[cfg(feature = "l4")]
@@ -443,7 +443,7 @@ where
                 let mut regs = unsafe { &(*DMA1::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    channel_write,
+                    _channel_write,
                     periph_addr_write,
                     ptr_write as u32,
                     num_data_write,
@@ -455,7 +455,7 @@ where
 
                 dma::cfg_channel(
                     &mut regs,
-                    channel_read,
+                    _channel_read,
                     periph_addr_read,
                     ptr_read as u32,
                     num_data_read,
@@ -470,7 +470,7 @@ where
                 let mut regs = unsafe { &(*pac::DMA2::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    channel_write,
+                    _channel_write,
                     periph_addr_write,
                     ptr_write as u32,
                     num_data_write,
@@ -482,7 +482,7 @@ where
 
                 dma::cfg_channel(
                     &mut regs,
-                    channel_read,
+                    _channel_read,
                     periph_addr_read,
                     ptr_read as u32,
                     num_data_read,

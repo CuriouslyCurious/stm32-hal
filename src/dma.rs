@@ -13,15 +13,11 @@
 //     }
 // }
 
+use cfg_if::cfg_if;
+
 use core::{
     ops::Deref,
     sync::atomic::{self, Ordering},
-};
-
-use crate::{
-    MAX_ITERS,
-    pac::{self, RCC},
-    util::rcc_en_reset,
 };
 
 cfg_if! {
@@ -29,22 +25,25 @@ cfg_if! {
         use crate::pac::{dma as dma1, DMA as DMA1};
     } else if #[cfg(feature = "f3x4")] {
         use crate::pac::{dma1, DMA1};
-    }
-    else {
-        use crate::pac::{dma1, dma2, DMA1, DMA2};
+    } else {
+        use crate::pac::{dma1, DMA1, DMA2};
     }
 }
 
-// use embedded_dma::{ReadBuffer, WriteBuffer};
-use cfg_if::cfg_if;
-#[cfg(any(feature = "g0", feature = "g4", feature = "wl"))]
-use pac::DMAMUX;
-// todo: DMAMUX2 support (Not sure if WB has it, but H7 has both).
-#[cfg(any(feature = "l5", feature = "wb", feature = "h7"))]
-use pac::DMAMUX1 as DMAMUX;
-#[cfg(feature = "h7")]
-use pac::DMAMUX2;
-use paste::paste;
+cfg_if! {
+    if #[cfg(any(feature = "g0", feature = "g4", feature = "wl"))] {
+        use crate::pac::DMAMUX as DMAMUX1;
+    } else if #[cfg(any(feature = "l5", feature = "wb", feature = "h7"))] {
+        // todo: DMAMUX2 support (Not sure if WB has it, but H7 has both).
+        use crate::pac::DMAMUX1;
+    } else if #[cfg(feature = "h7")] {
+        use crate::pac::DMAMUX2;
+    }
+}
+
+use crate::pac::{self, RCC};
+#[cfg(not(feature = "f3"))]
+use crate::util::rcc_en_reset;
 
 // todo: Several sections of this are only correct for DMA1.
 
@@ -2048,7 +2047,7 @@ pub fn clear_interrupt(periph: DmaPeriph, channel: DmaChannel, interrupt: DmaInt
         }
         #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
         DmaPeriph::Dma2 => {
-            let mut regs = unsafe { &(*pac::DMA2::ptr()) };
+            let mut regs = unsafe { &(*DMA2::ptr()) };
             clear_interrupt_internal(&mut regs, channel, interrupt);
         }
     }
@@ -2094,7 +2093,7 @@ pub fn mux(periph: DmaPeriph, channel: DmaChannel, input: DmaInput) {
     // todo: With this in mind, some of the mappings below are not correct on some G4 variants.
 
     unsafe {
-        let mux = unsafe { &(*DMAMUX::ptr()) };
+        let mux = unsafe { &(*DMAMUX1::ptr()) };
 
         #[cfg(feature = "g4")]
         let rcc = unsafe { &(*RCC::ptr()) };
@@ -2198,10 +2197,11 @@ where
 }
 
 // todo: Code below is for experimental struct-per-channel API
+#[cfg(not(any(feature = "f3", feature = "g0")))]
 macro_rules! make_chan_struct {
     // ($Periph:ident, $PERIPH:ident, $periph:ident, $ch:expr) => {
     ($periph: expr, $ch:expr) => {
-        paste! {
+        paste::paste! {
             /// Experimental/WIP channel-based DMA struct.
             pub struct [<Dma $periph Ch $ch>] {
                 // #[cfg(feature = "h7")]

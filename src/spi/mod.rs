@@ -2,7 +2,21 @@
 //! Provides APIs to configure, read, and write from
 //! SPI, with blocking, nonblocking, and DMA functionality.
 
-use core::{ops::Deref, ptr};
+use cfg_if::cfg_if;
+
+use core::ops::Deref;
+
+cfg_if! {
+    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
+        use crate::pac::DMA as DMA1;
+    } else {
+        use crate::pac::DMA1;
+    }
+}
+
+#[cfg(not(any(feature = "f4", feature = "l552")))]
+use crate::dma::{self, ChannelCfg, DmaChannel, DmaInterrupt, DmaPeriph, clear_interrupt, stop};
+use crate::{pac::spi1, util::RccPeriph}; // todo temp
 
 cfg_if::cfg_if! {
     if #[cfg(any(feature = "h5", feature = "h7"))] {
@@ -13,25 +27,6 @@ cfg_if::cfg_if! {
         pub use baseline::*;
     }
 }
-
-use cfg_if::cfg_if;
-
-use crate::{pac, util::RccPeriph};
-
-cfg_if! {
-    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
-        use crate::pac::dma as dma_p;
-        use crate::pac::DMA as DMA1;
-    } else {
-        use crate::pac::dma1 as dma_p;
-        use crate::pac::DMA1;
-    }
-}
-
-#[cfg(any(feature = "f3", feature = "l4"))]
-use crate::dma::DmaInput;
-#[cfg(not(any(feature = "f4", feature = "l552")))]
-use crate::dma::{self, ChannelCfg, Dma, DmaChannel}; // todo temp
 
 #[macro_export]
 macro_rules! check_errors {
@@ -246,7 +241,7 @@ pub struct Spi<R> {
 
 impl<R> Spi<R>
 where
-    R: Deref<Target = pac::spi1::RegisterBlock> + RccPeriph,
+    R: Deref<Target = spi1::RegisterBlock> + RccPeriph,
 {
     /// Stop a DMA transfer. Stops the channel, and disables the `txdmaen` and `rxdmaen` bits.
     /// Run this after each transfer completes - you may wish to do this in an interrupt
@@ -257,14 +252,14 @@ where
         &mut self,
         channel: DmaChannel,
         channel2: Option<DmaChannel>,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
     ) {
         // (RM:) To close communication it is mandatory to follow these steps in order:
         // 1. Disable DMA streams for Tx and Rx in the DMA registers, if the streams are used.
 
-        dma::stop(dma_periph, channel);
+        stop(dma_periph, channel);
         if let Some(ch2) = channel2 {
-            dma::stop(dma_periph, ch2);
+            stop(dma_periph, ch2);
         };
 
         // 2. Disable the SPI by following the SPI disable procedure:
@@ -291,15 +286,15 @@ where
     #[cfg(not(any(feature = "f4", feature = "l552")))]
     pub fn cleanup_dma(
         &mut self,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
         channel_tx: DmaChannel,
         channel_rx: Option<DmaChannel>,
     ) {
         // The hardware seems to automatically enable Tx too; and we use it when transmitting.
-        dma::clear_interrupt(dma_periph, channel_tx, dma::DmaInterrupt::TransferComplete);
+        clear_interrupt(dma_periph, channel_tx, DmaInterrupt::TransferComplete);
 
         if let Some(ch_rx) = channel_rx {
-            dma::clear_interrupt(dma_periph, ch_rx, dma::DmaInterrupt::TransferComplete);
+            clear_interrupt(dma_periph, ch_rx, DmaInterrupt::TransferComplete);
         }
 
         self.stop_dma(channel_tx, channel_rx, dma_periph);

@@ -20,7 +20,7 @@ cfg_if::cfg_if! {
     } else if #[cfg(any(feature = "l4", feature = "l5", feature = "g0", feature = "g4", feature = "wb", feature = "wl"))] {
         mod baseline;
         pub use baseline::*;
-    } else if #[cfg(feature = "u5")] {
+    // } else if #[cfg(feature = "u5")] {
         // todo once SVD is out
     } else if #[cfg(any(feature = "h5", feature = "h7"))] {
         mod h;

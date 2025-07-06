@@ -6,40 +6,33 @@
 
 // todo: WB and WL should support pwm features
 
-#[cfg(feature = "monotonic")]
-use core;
+use cfg_if::cfg_if;
+use num_traits::float::FloatCore;
+use paste::paste; // To round floats.
+
 use core::{
     ops::Deref,
     sync::atomic::{AtomicU32, Ordering},
     time::Duration,
 };
 
-use cfg_if::cfg_if;
-use paste::paste;
-#[cfg(feature = "monotonic")]
-use rtic_monotonic::Monotonic;
-
 cfg_if! {
-    if #[cfg(feature = "embedded_hal")] {
-        // use embedded_hal::{
-        //     blocking::delay::{DelayMs, DelayUs},
-        //     timer::CountDown,
-        // };
-        // use embedded_time::{rate::Hertz, duration};
-        // use void::Void;
+    if #[cfg(feature = "monotonic")] {
+        use rtic_monotonic::Monotonic;
     }
 }
 
-use num_traits::float::FloatCore; // To round floats.
+cfg_if! {
+    if #[cfg(feature = "g0")] {
+        use crate::pac::DMA as DMA1;
+    } else if #[cfg(not(any(feature = "g0", feature = "f", feature = "l552", feature = "l4")))] {
+        use crate::pac::DMA1;
+    }
+}
 
-#[cfg(any(feature = "f3", feature = "l4"))]
-use crate::dma::DmaInput;
-#[cfg(not(any(feature = "f4", feature = "l552")))]
-use crate::dma::{self, ChannelCfg, DmaChannel};
-#[cfg(feature = "g0")]
-use crate::pac::DMA as DMA1;
-#[cfg(not(feature = "g0"))]
-use crate::pac::DMA1;
+// #[cfg(not(any(feature = "f4", feature = "l552")))]
+// use crate::dma::{self, ChannelCfg, DmaChannel};
+
 // todo: LPTIM (low-power timers) and HRTIM (high-resolution timers). And Advanced control functionality
 use crate::{
     clocks::Clocks,
@@ -859,7 +852,7 @@ macro_rules! make_timer {
         #[cfg(feature = "monotonic")]
         impl Monotonic for Timer<pac::$TIMX> {
             type Instant = Instant;
-            type Duration = core::time::Duration;
+            type Duration = Duration;
 
             const DISABLE_INTERRUPT_ON_EMPTY_QUEUE: bool = false;
 

@@ -9,38 +9,28 @@
 // todo to change with our current model. Note sure if PAC, or MCU limitation
 // todo: WL is also missing interrupt support.
 
-#[cfg(feature = "embedded_hal")]
-use core::convert::Infallible;
-
-#[cfg(feature = "embedded_hal")]
-use embedded_hal::digital::{ErrorType, InputPin, OutputPin, StatefulOutputPin};
-
-use crate::pac::{self, EXTI, RCC};
-#[cfg(not(feature = "h7"))]
-use crate::util::rcc_en_reset;
-
-// #[cfg(not(any(
-//     // feature = "g0",
-//     feature = "f4",
-//     // feature = "l5",
-//     feature = "f3",
-//     feature = "l4"
-// )))]
-// use core::ops::Deref;
-
-cfg_if! {
-    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
-        use crate::pac::DMA as DMA1;
-    } else if #[cfg(any(feature = "f4", feature = "h5"))] {} else {
-        use crate::pac::DMA1;
-    }
-}
-
 use cfg_if::cfg_if;
 use paste::paste;
 
+cfg_if! {
+    if #[cfg(any(feature = "f4", feature = "l552", feature = "h5"))] {
+
+    } else if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
+        use crate::pac::{DMA as DMA1};
+    } else if #[cfg(feature = "f3x4")] {
+        use crate::pac::DMA1;
+    } else {
+        use crate::pac::{DMA1, DMA2};
+    }
+}
+
 #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))]
-use crate::dma::{self, ChannelCfg, DmaChannel};
+use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel};
+#[cfg(any(feature = "l4", feature = "l5", feature = "g4"))]
+use crate::pac::PWR;
+use crate::pac::{EXTI, RCC, SYSCFG, gpioa};
+#[cfg(not(feature = "h7"))]
+use crate::util::rcc_en_reset;
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
@@ -350,10 +340,10 @@ macro_rules! set_state {
 // Reduce DRY for setting up interrupts.
 macro_rules! set_exti {
     ($pin:expr, $rising:expr, $falling:expr, $val:expr, [$(($num:expr, $crnum:expr)),+]) => {
-        let exti = unsafe { &(*pac::EXTI::ptr()) };
-        let syscfg  = unsafe { &(*pac::SYSCFG::ptr()) };
+        let exti = unsafe { &(*EXTI::ptr()) };
+        let syscfg  = unsafe { &(*SYSCFG::ptr()) };
 
-        paste! {
+        paste::paste! {
             match $pin {
                 $(
                     $num => {
@@ -401,8 +391,8 @@ macro_rules! set_exti {
 // Similar to `set_exti`, but with reg names sans `1`.
 macro_rules! set_exti_f4 {
     ($pin:expr, $rising:expr, $falling:expr, $val:expr, [$(($num:expr, $crnum:expr)),+]) => {
-        let exti = unsafe { &(*pac::EXTI::ptr()) };
-        let syscfg  = unsafe { &(*pac::SYSCFG::ptr()) };
+        let exti = unsafe { &(*EXTI::ptr()) };
+        let syscfg  = unsafe { &(*SYSCFG::ptr()) };
 
         paste! {
             match $pin {
@@ -426,7 +416,7 @@ macro_rules! set_exti_f4 {
 // For L5 See `set_exti!`. Different method naming pattern for exticr.
 macro_rules! set_exti_l5 {
     ($pin:expr, $rising:expr, $falling:expr, $val:expr, [$(($num:expr, $crnum:expr, $num2:expr)),+]) => {
-        let exti = unsafe { &(*pac::EXTI::ptr()) };
+        let exti = unsafe { &(*EXTI::ptr()) };
 
         paste! {
             match $pin {
@@ -457,7 +447,7 @@ macro_rules! set_exti_l5 {
 // For G0. See `set_exti!`. Todo? Reduce DRY.
 macro_rules! set_exti_g0 {
     ($pin:expr, $rising:expr, $falling:expr, $val:expr, [$(($num:expr, $crnum:expr, $num2:expr)),+]) => {
-        let exti = unsafe { &(*pac::EXTI::ptr()) };
+        let exti = unsafe { &(*EXTI::ptr()) };
 
         paste! {
             match $pin {
@@ -489,7 +479,7 @@ pub struct Pin {
 
 impl Pin {
     /// Internal function to get the appropriate GPIO block pointer.
-    const fn regs(&self) -> *const pac::gpioa::RegisterBlock {
+    const fn regs(&self) -> *const gpioa::RegisterBlock {
         // Note that we use this `const` fn and pointer casting since not all ports actually
         // deref to GPIOA in PAC.
         regs(self.port)
@@ -742,7 +732,7 @@ impl Pin {
 
                             #[cfg(feature = "l4x6")]
                             {
-                                let pwr = unsafe { &(*pac::PWR::ptr()) };
+                                let pwr = unsafe { &(*PWR::ptr()) };
                                 // RM0351: Setting this bit (IOSV) is mandatory to use PG[15:2].
                                 rcc.apb1enr1.modify(|_, w| w.pwren().set_bit());
                                 pwr.cr2.modify(|_, w| w.iosv().set_bit());
@@ -756,9 +746,7 @@ impl Pin {
                 // Setting this bit is mandatory to use PG[15:2]."
                 {
                     unsafe {
-                        (*crate::pac::PWR::ptr())
-                            .cr2
-                            .modify(|_, w| w.iosv().set_bit());
+                        (*crate::PWR::ptr()).cr2.modify(|_, w| w.iosv().set_bit());
                     }
                 }
             }
@@ -1071,51 +1059,6 @@ impl Pin {
     }
 }
 
-#[cfg(feature = "embedded_hal")]
-impl ErrorType for Pin {
-    type Error = Infallible;
-}
-
-#[cfg(feature = "embedded_hal")]
-impl InputPin for Pin {
-    fn is_high(&mut self) -> Result<bool, Self::Error> {
-        Ok(Pin::is_high(self))
-    }
-
-    fn is_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(Pin::is_low(self))
-    }
-}
-
-#[cfg(feature = "embedded_hal")]
-impl OutputPin for Pin {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        Pin::set_low(self);
-        Ok(())
-    }
-
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        Pin::set_high(self);
-        Ok(())
-    }
-}
-
-#[cfg(feature = "embedded_hal")]
-impl StatefulOutputPin for Pin {
-    fn is_set_high(&mut self) -> Result<bool, Self::Error> {
-        Ok(Pin::is_high(self))
-    }
-
-    fn is_set_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(Pin::is_low(self))
-    }
-
-    fn toggle(&mut self) -> Result<(), Self::Error> {
-        Pin::toggle(self);
-        Ok(())
-    }
-}
-
 /// Check if a pin's input voltage is high. Reads from the `IDR` register.
 /// Does not require a `Pin` struct.
 pub fn is_high(port: Port, pin: u8) -> bool {
@@ -1326,7 +1269,7 @@ pub fn clear_exti_interrupt(line: u8) {
     }
 }
 
-const fn regs(port: Port) -> *const pac::gpioa::RegisterBlock {
+const fn regs(port: Port) -> *const gpioa::RegisterBlock {
     // Note that we use this `const` fn and pointer casting since not all ports actually
     // deref to GPIOA in PAC.
     match port {
@@ -1393,25 +1336,19 @@ const fn regs(port: Port) -> *const pac::gpioa::RegisterBlock {
     }
 }
 
-#[cfg(not(any(
-    feature = "f4",
-    feature = "l5",
-    feature = "f3",
-    feature = "l4",
-    feature = "h5"
-)))]
+#[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))]
 /// Write a series of words to the BSRR (atomic output) register. Note that these are direct writes
 /// to the full, 2-sided register - not a series of low/high values.
-pub unsafe fn write_dma(
+pub fn write_dma(
     buf: &[u32],
     port: Port,
-    dma_channel: DmaChannel,
+    _channel: DmaChannel,
     channel_cfg: ChannelCfg,
-    dma_periph: dma::DmaPeriph,
+    dma_periph: DmaPeriph,
 ) {
     let (ptr, len) = (buf.as_ptr(), buf.len());
 
-    let periph_addr = &(*(regs(port))).bsrr as *const _ as u32;
+    let periph_addr = unsafe { &(*(regs(port))).bsrr as *const _ as u32 };
 
     #[cfg(feature = "h7")]
     let num_data = len as u32;
@@ -1419,56 +1356,50 @@ pub unsafe fn write_dma(
     let num_data = len as u16;
 
     match dma_periph {
-        dma::DmaPeriph::Dma1 => {
+        DmaPeriph::Dma1 => {
             let mut regs = unsafe { &(*DMA1::ptr()) };
-            dma::cfg_channel(
+            cfg_channel(
                 &mut regs,
-                dma_channel,
+                _channel,
                 periph_addr,
                 ptr as u32,
                 num_data,
-                dma::Direction::ReadFromMem,
-                dma::DataSize::S32,
-                dma::DataSize::S32,
+                Direction::ReadFromMem,
+                DataSize::S32,
+                DataSize::S32,
                 channel_cfg,
             );
         }
         #[cfg(not(any(feature = "g0", feature = "wb")))]
-        dma::DmaPeriph::Dma2 => {
-            let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-            dma::cfg_channel(
+        DmaPeriph::Dma2 => {
+            let mut regs = unsafe { &(*DMA2::ptr()) };
+            cfg_channel(
                 &mut regs,
-                dma_channel,
+                _channel,
                 periph_addr,
                 ptr as u32,
                 num_data,
-                dma::Direction::ReadFromMem,
-                dma::DataSize::S32,
-                dma::DataSize::S32,
+                Direction::ReadFromMem,
+                DataSize::S32,
+                DataSize::S32,
                 channel_cfg,
             );
         }
     }
 }
 
-#[cfg(not(any(
-    feature = "f4",
-    feature = "l5",
-    feature = "f3",
-    feature = "l4",
-    feature = "h5"
-)))]
+#[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))]
 /// Read a series of words from the IDR register.
-pub unsafe fn read_dma(
+pub fn read_dma(
     buf: &[u32],
     port: Port,
-    dma_channel: DmaChannel,
+    _channel: DmaChannel,
     channel_cfg: ChannelCfg,
-    dma_periph: dma::DmaPeriph,
+    dma_periph: DmaPeriph,
 ) {
     let (ptr, len) = (buf.as_ptr(), buf.len());
 
-    let periph_addr = &(*(regs(port))).idr as *const _ as u32;
+    let periph_addr = unsafe { &(*(regs(port))).idr as *const _ as u32 };
 
     #[cfg(feature = "h7")]
     let num_data = len as u32;
@@ -1476,34 +1407,84 @@ pub unsafe fn read_dma(
     let num_data = len as u16;
 
     match dma_periph {
-        dma::DmaPeriph::Dma1 => {
+        DmaPeriph::Dma1 => {
             let mut regs = unsafe { &(*DMA1::ptr()) };
-            dma::cfg_channel(
+            cfg_channel(
                 &mut regs,
-                dma_channel,
+                _channel,
                 periph_addr,
                 ptr as u32,
                 num_data,
-                dma::Direction::ReadFromPeriph,
-                dma::DataSize::S32,
-                dma::DataSize::S32,
+                Direction::ReadFromPeriph,
+                DataSize::S32,
+                DataSize::S32,
                 channel_cfg,
             );
         }
         #[cfg(not(any(feature = "g0", feature = "wb")))]
-        dma::DmaPeriph::Dma2 => {
-            let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-            dma::cfg_channel(
+        DmaPeriph::Dma2 => {
+            let mut regs = unsafe { &(*DMA2::ptr()) };
+            cfg_channel(
                 &mut regs,
-                dma_channel,
+                _channel,
                 periph_addr,
                 ptr as u32,
                 num_data,
-                dma::Direction::ReadFromPeriph,
-                dma::DataSize::S32,
-                dma::DataSize::S32,
+                Direction::ReadFromPeriph,
+                DataSize::S32,
+                DataSize::S32,
                 channel_cfg,
             );
+        }
+    }
+}
+
+#[cfg(feature = "embedded_hal")]
+mod embedded_hal_impl {
+    use embedded_hal::digital::{ErrorType, InputPin, OutputPin, StatefulOutputPin};
+
+    use core::convert::Infallible;
+
+    use super::*;
+
+    impl ErrorType for Pin {
+        type Error = Infallible;
+    }
+
+    impl InputPin for Pin {
+        fn is_high(&mut self) -> Result<bool, Self::Error> {
+            Ok(Pin::is_high(self))
+        }
+
+        fn is_low(&mut self) -> Result<bool, Self::Error> {
+            Ok(Pin::is_low(self))
+        }
+    }
+
+    impl OutputPin for Pin {
+        fn set_low(&mut self) -> Result<(), Self::Error> {
+            Pin::set_low(self);
+            Ok(())
+        }
+
+        fn set_high(&mut self) -> Result<(), Self::Error> {
+            Pin::set_high(self);
+            Ok(())
+        }
+    }
+
+    impl StatefulOutputPin for Pin {
+        fn is_set_high(&mut self) -> Result<bool, Self::Error> {
+            Ok(Pin::is_high(self))
+        }
+
+        fn is_set_low(&mut self) -> Result<bool, Self::Error> {
+            Ok(Pin::is_low(self))
+        }
+
+        fn toggle(&mut self) -> Result<(), Self::Error> {
+            Pin::toggle(self);
+            Ok(())
         }
     }
 }

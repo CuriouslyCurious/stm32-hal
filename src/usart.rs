@@ -11,18 +11,23 @@ use core::ops::Deref;
 
 use cfg_if::cfg_if;
 
-#[cfg(any(feature = "f3", feature = "l4"))]
-use crate::dma::DmaInput;
+cfg_if! {
+    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
+        use crate::pac::{DMA as DMA1};
+    } else if #[cfg(feature = "f3x4")] {
+        use crate::pac::DMA1;
+    } else if #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))] {
+        use crate::pac::{DMA1, DMA2};
+    }
+}
+
 #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))]
-use crate::dma::{self, ChannelCfg, DmaChannel};
-#[cfg(feature = "g0")]
-use crate::pac::DMA as DMA1;
-#[cfg(not(any(feature = "g0", feature = "h5")))]
-use crate::pac::DMA1;
+use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel};
+
 use crate::{
     MAX_ITERS,
     clocks::Clocks,
-    pac::{self, RCC},
+    pac::{RCC, usart1},
     util::{BaudPeriph, RccPeriph},
 };
 
@@ -202,7 +207,7 @@ pub struct Usart<R> {
 
 impl<R> Usart<R>
 where
-    R: Deref<Target = pac::usart1::RegisterBlock> + RccPeriph + BaudPeriph,
+    R: Deref<Target = usart1::RegisterBlock> + RccPeriph + BaudPeriph,
 {
     /// Initialize a U(S)ART peripheral, including configuration register writes, and enabling and
     /// resetting its RCC peripheral clock. `baud` is the baud rate, in bytes-per-second.
@@ -309,7 +314,7 @@ where
 
 impl<R> Usart<R>
 where
-    R: Deref<Target = pac::usart1::RegisterBlock> + BaudPeriph,
+    R: Deref<Target = usart1::RegisterBlock> + BaudPeriph,
 {
     /// Set the BAUD rate. Called during init, and can be called later to change BAUD
     /// during program execution.
@@ -360,7 +365,7 @@ where
 
 impl<R> Usart<R>
 where
-    R: Deref<Target = pac::usart1::RegisterBlock> + RccPeriph,
+    R: Deref<Target = usart1::RegisterBlock> + RccPeriph,
 {
     /// Enable this U(S)ART peripheral.
     pub fn enable(&mut self) {
@@ -535,12 +540,12 @@ where
     /// Transmit data using DMA. (L44 RM, section 38.5.15)
     /// Note that the `channel` argument is unused on F3 and L4, since it is hard-coded,
     /// and can't be configured using the DMAMUX peripheral. (`dma::mux()` fn).
-    pub unsafe fn write_dma(
+    pub fn write_dma(
         &mut self,
         buf: &[u8],
-        channel: DmaChannel,
+        _channel: DmaChannel,
         channel_cfg: ChannelCfg,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
     ) {
         let (ptr, len) = (buf.as_ptr(), buf.len());
 
@@ -548,7 +553,7 @@ where
         // the following procedure (x denotes the channel number):
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let channel = R::write_chan();
+        let _channel = R::write_chan();
         #[cfg(feature = "l4")]
         let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
         #[cfg(feature = "l4")]
@@ -570,11 +575,11 @@ where
         self.regs.icr.write(|w| w.tccf().set_bit());
 
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     // 1. Write the USART_TDR register address in the DMA control register to configure it as
                     // the destination of the transfer. The data is moved to this address from memory after
                     // each TXE event.
@@ -585,26 +590,26 @@ where
                     ptr as u32,
                     // 3. Configure the total number of bytes to be transferred to the DMA control register.
                     num_data,
-                    dma::Direction::ReadFromMem,
+                    Direction::ReadFromMem,
                     // 4. Configure the channel priority in the DMA control register
                     // (Handled by `ChannelCfg::default())`
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
-            dma::DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                dma::cfg_channel(
+            DmaPeriph::Dma2 => {
+                let mut regs = unsafe { &(*DMA2::ptr()) };
+                cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     &self.regs.tdr as *const _ as u32,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromMem,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromMem,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }
@@ -631,17 +636,17 @@ where
     /// Receive data using DMA. (L44 RM, section 38.5.15; G4 RM section 37.5.19.
     /// Note that the `channel` argument is unused on F3 and L4, since it is hard-coded,
     /// and can't be configured using the DMAMUX peripheral. (`dma::mux()` fn).
-    pub unsafe fn read_dma(
+    pub fn read_dma(
         &mut self,
         buf: &mut [u8],
-        channel: DmaChannel,
+        _channel: DmaChannel,
         channel_cfg: ChannelCfg,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
     ) {
         let (ptr, len) = (buf.as_mut_ptr(), buf.len());
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let channel = R::read_chan();
+        let _channel = R::read_chan();
         #[cfg(feature = "l4")]
         let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
         #[cfg(feature = "l4")]
@@ -656,11 +661,11 @@ where
         self.regs.cr3.modify(|_, w| w.dmar().set_bit());
 
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     // 1. Write the USART_RDR register address in the DMA control register to configure it as
                     // the source of the transfer. The data is moved from this address to the memory after
                     // each RXNE event.
@@ -671,24 +676,24 @@ where
                     ptr as u32,
                     // 3. Configure the total number of bytes to be transferred to the DMA control register.
                     num_data,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromPeriph,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
-            dma::DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                dma::cfg_channel(
+            DmaPeriph::Dma2 => {
+                let mut regs = unsafe { &(*DMA2::ptr()) };
+                cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     &self.regs.rdr as *const _ as u32,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromPeriph,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }
@@ -987,7 +992,7 @@ mod embedded_io_impl {
 
     impl<R> Read for Usart<R>
     where
-        R: Deref<Target = pac::usart1::RegisterBlock> + RccPeriph + BaudPeriph,
+        R: Deref<Target = usart1::RegisterBlock> + RccPeriph + BaudPeriph,
         Usart<R>: ReadReady,
     {
         fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, Self::Error> {
@@ -1008,7 +1013,7 @@ mod embedded_io_impl {
 
     impl<R> ReadReady for Usart<R>
     where
-        R: Deref<Target = pac::usart1::RegisterBlock> + RccPeriph + BaudPeriph,
+        R: Deref<Target = usart1::RegisterBlock> + RccPeriph + BaudPeriph,
     {
         fn read_ready(&mut self) -> Result<bool, Self::Error> {
             self.check_status()?;
@@ -1027,7 +1032,7 @@ mod embedded_io_impl {
 
     impl<R> Write for Usart<R>
     where
-        R: Deref<Target = pac::usart1::RegisterBlock> + RccPeriph + BaudPeriph,
+        R: Deref<Target = usart1::RegisterBlock> + RccPeriph + BaudPeriph,
     {
         fn write(&mut self, mut buf: &[u8]) -> Result<usize, Self::Error> {
             // Block until at least one byte can be written:
@@ -1055,7 +1060,7 @@ mod embedded_io_impl {
 
     impl<R> WriteReady for Usart<R>
     where
-        R: Deref<Target = pac::usart1::RegisterBlock> + RccPeriph + BaudPeriph,
+        R: Deref<Target = usart1::RegisterBlock> + RccPeriph + BaudPeriph,
     {
         fn write_ready(&mut self) -> Result<bool, Self::Error> {
             cfg_if! {

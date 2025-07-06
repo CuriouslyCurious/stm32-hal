@@ -435,7 +435,7 @@ where
         &mut self,
         buf: &[u16],
         dac_channel: DacChannel,
-        dma_channel: DmaChannel,
+        _dma_channel: DmaChannel,
         channel_cfg: ChannelCfg,
         dma_periph: dma::DmaPeriph,
         // dma: &mut Dma<D>,
@@ -446,7 +446,7 @@ where
         let (ptr, len) = (buf.as_ptr(), buf.len());
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let dma_channel = match dac_channel {
+        let _dma_channel = match dac_channel {
             DacChannel::C1 => DmaInput::Dac1Ch1.dma1_channel(),
             DacChannel::C2 => DmaInput::Dac1Ch2.dma1_channel(),
         };
@@ -553,7 +553,7 @@ where
                 let mut regs = unsafe { &(*DMA1::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    dma_channel,
+                    _dma_channel,
                     periph_addr,
                     ptr as u32,
                     len,
@@ -568,7 +568,7 @@ where
                 let mut regs = unsafe { &(*pac::DMA2::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    dma_channel,
+                    _dma_channel,
                     periph_addr,
                     ptr as u32,
                     len,

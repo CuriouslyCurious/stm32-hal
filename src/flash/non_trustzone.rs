@@ -366,7 +366,7 @@ impl Flash {
     }
 
     /// Erase one or both banks. Called "Mass erase" on single-bank variants like G4.
-    pub fn erase_bank(&mut self, bank: Bank) -> Result<(), Error> {
+    pub fn erase_bank(&mut self, _bank: Bank) -> Result<(), Error> {
         // todo: DRY
         // (H7): 2. Unlock the FLASH_CR1/2 register, as described in Section 4.5.1: FLASH configuration
         // protection (only if register is not already unlocked).
@@ -375,7 +375,7 @@ impl Flash {
         #[cfg(not(feature = "h7"))]
         let regs = &self.regs;
         #[cfg(feature = "h7")]
-        let regs = &match bank {
+        let regs = &match _bank {
             Bank::B1 => self.regs.bank1(),
             // todo: PAC bank 2 error
             #[cfg(not(any(feature = "h747cm4", feature = "h747cm7")))]
@@ -408,7 +408,7 @@ impl Flash {
                 // 3. Set the BER1/2 bit in the FLASH_CR1/2 register corresponding to the targeted bank.
                 regs.cr.modify(|_, w| w.ber().set_bit());
             } else { // L4, G4
-                match bank {
+                match _bank {
                     Bank::B1 => {
                         regs.cr.modify(|_, w| w.mer1().set_bit());
                     }

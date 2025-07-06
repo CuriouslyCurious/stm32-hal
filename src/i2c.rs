@@ -2,18 +2,20 @@
 //! Provides APIs to configure, read, and write from
 //! I2C, with blocking, nonblocking, and DMA functionality.
 
+use cfg_if::cfg_if;
+
 use core::ops::Deref;
 
-// #[cfg(feature = "embedded_hal")]
-// use embedded_hal::blocking::i2c::{Read, Write, WriteRead};
-#[cfg(any(feature = "f3", feature = "l4"))]
-use crate::dma::DmaInput;
+cfg_if! {
+    if #[cfg(feature = "g0")] {
+        use crate::pac::DMA as DMA1;
+    } else if #[cfg(not(any(feature = "g0", feature = "h5")))] {
+        use crate::pac::DMA1;
+    }
+}
+
 #[cfg(not(any(feature = "l552", feature = "h5")))]
 use crate::dma::{self, ChannelCfg, DmaChannel};
-#[cfg(feature = "g0")]
-use crate::pac::DMA as DMA1;
-#[cfg(not(any(feature = "g0", feature = "h5")))]
-use crate::pac::DMA1;
 use crate::{
     MAX_ITERS,
     clocks::Clocks,
@@ -570,14 +572,14 @@ where
         addr: u8,
         buf: &[u8],
         autoend: bool,
-        channel: DmaChannel,
+        _channel: DmaChannel,
         channel_cfg: ChannelCfg,
         dma_periph: dma::DmaPeriph,
     ) {
         let (ptr, len) = (buf.as_ptr(), buf.len());
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let channel = R::write_chan();
+        let _channel = R::write_chan();
         #[cfg(feature = "l4")]
         let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
         #[cfg(feature = "l4")]
@@ -621,7 +623,7 @@ where
                 let mut regs = unsafe { &(*DMA1::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     &self.regs.txdr as *const _ as u32,
                     ptr as u32,
                     num_data,
@@ -636,7 +638,7 @@ where
                 let mut regs = unsafe { &(*pac::DMA2::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     &self.regs.txdr as *const _ as u32,
                     ptr as u32,
                     num_data,
@@ -657,14 +659,14 @@ where
         &mut self,
         addr: u8,
         buf: &mut [u8],
-        channel: DmaChannel,
+        _channel: DmaChannel,
         channel_cfg: ChannelCfg,
         dma_periph: dma::DmaPeriph,
     ) {
         let (ptr, len) = (buf.as_mut_ptr(), buf.len());
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let channel = R::read_chan();
+        let _channel = R::read_chan();
         #[cfg(feature = "l4")]
         let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
         #[cfg(feature = "l4")]
@@ -702,7 +704,7 @@ where
                 let mut regs = unsafe { &(*DMA1::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     &self.regs.rxdr as *const _ as u32,
                     ptr as u32,
                     num_data,
@@ -717,7 +719,7 @@ where
                 let mut regs = unsafe { &(*pac::DMA2::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
-                    channel,
+                    _channel,
                     &self.regs.rxdr as *const _ as u32,
                     ptr as u32,
                     num_data,

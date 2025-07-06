@@ -1,17 +1,17 @@
 //! This is an internal module that contains utility functionality used by other modules.
 
-#[cfg(feature = "l4")]
-use core::ops::Deref;
-
 use cfg_if::cfg_if;
+
+cfg_if! {
+    if #[cfg(feature = "l4")] {
+        use crate::dma::{dma1, channel_select};
+        use core::ops::Deref;
+    }
+}
 
 // todo: L5 has a PAC bug on CCR registers past 1.
 #[cfg(any(feature = "f3", feature = "l4"))]
-use crate::dma::{self, Dma, DmaChannel, DmaInput};
-#[cfg(any(feature = "f3", feature = "l4"))]
-use crate::pac::DMA1;
-#[cfg(feature = "l4")]
-use crate::pac::dma1;
+use crate::dma::{DmaChannel, DmaInput};
 use crate::{
     clocks::Clocks,
     pac::{self, rcc::RegisterBlock},
@@ -40,9 +40,6 @@ cfg_if! {
         use crate::pac::ADC1;
     }
 }
-
-#[cfg(any(feature = "f3", feature = "l4",))]
-use crate::pac::dma1 as dma_p;
 
 /// Enables and resets peripheral clocks on various RCC registesr.
 /// The first argument is a `apb1`, `ahb2` etc to specify the reg block. The second is something like
@@ -258,6 +255,7 @@ impl BaudPeriph for pac::LPUART1 {
 // }
 
 // todo: This trait is currently a one-off for adc, and isn't currently used.
+#[allow(dead_code)]
 pub trait VrefPeriph {
     fn vref(clock_cfg: &Clocks) -> u32;
 }
@@ -505,12 +503,12 @@ impl RccPeriph for pac::SPI2 {
 
     #[cfg(feature = "l4")]
     fn read_sel<D: Deref<Target = dma1::RegisterBlock>>(regs: &mut D) {
-        dma::channel_select(regs, DmaInput::Spi2Rx);
+        channel_select(regs, DmaInput::Spi2Rx);
     }
 
     #[cfg(feature = "l4")]
     fn write_sel<D: Deref<Target = dma1::RegisterBlock>>(regs: &mut D) {
-        dma::channel_select(regs, DmaInput::Spi2Tx);
+        channel_select(regs, DmaInput::Spi2Tx);
     }
 }
 
