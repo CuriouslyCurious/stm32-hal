@@ -338,15 +338,15 @@ macro_rules! set_state {
     }
 }
 
-// todo: Consolidate these exti macros
-
 // Reduce DRY for setting up interrupts.
+#[cfg(not(any(feature = "f373", feature = "wl")))]
 macro_rules! set_exti {
     ($pin:expr, $rising:expr, $falling:expr, $val:expr, [$(($num:expr, $crnum:expr)),+]) => {
         let exti = unsafe { &(*EXTI::ptr()) };
         let syscfg  = unsafe { &(*SYSCFG::ptr()) };
 
         paste::paste! {
+            #[cfg(not(feature = "f4"))]
             match $pin {
                 $(
                     $num => {
@@ -386,18 +386,8 @@ macro_rules! set_exti {
                 )+
                 _ => panic!("GPIO pins must be 0 - 15."),
             }
-        }
-    }
-}
-
-#[cfg(feature = "f4")]
-// Similar to `set_exti`, but with reg names sans `1`.
-macro_rules! set_exti_f4 {
-    ($pin:expr, $rising:expr, $falling:expr, $val:expr, [$(($num:expr, $crnum:expr)),+]) => {
-        let exti = unsafe { &(*EXTI::ptr()) };
-        let syscfg  = unsafe { &(*SYSCFG::ptr()) };
-
-        paste! {
+            // Similar to `set_exti`, but with reg names sans `1`.
+            #[cfg(feature = "f4")]
             match $pin {
                 $(
                     $num => {
@@ -412,18 +402,15 @@ macro_rules! set_exti_f4 {
                 _ => panic!("GPIO pins must be 0 - 15."),
             }
         }
-    }
-}
-
-#[cfg(any(feature = "l5", feature = "h5"))]
-// For L5 See `set_exti!`. Different method naming pattern for exticr.
-macro_rules! set_exti_l5 {
+    };
+    // For L5 See `set_exti!`. Different method naming pattern for exticr.
     ($pin:expr, $rising:expr, $falling:expr, $val:expr, [$(($num:expr, $crnum:expr, $num2:expr)),+]) => {
         let exti = unsafe { &(*EXTI::ptr()) };
 
         paste! {
             match $pin {
                 $(
+                    #[cfg(any(feature = "l5", feature = "h5"))]
                     $num => {
                         exti.imr1.modify(|_, w| w.[<im $num>]().set_bit());  // unmask
                         exti.rtsr1.modify(|_, w| w.[<rt $num>]().bit($rising));  // Rising trigger
@@ -439,22 +426,7 @@ macro_rules! set_exti_l5 {
                             .[<exticr $crnum>]
                             .modify(|_, w| unsafe { w.[<exti $num>]().bits($val) });
                     }
-                )+
-                _ => panic!("GPIO pins must be 0 - 15."),
-            }
-        }
-    }
-}
-
-#[cfg(feature = "g0")]
-// For G0. See `set_exti!`. Todo? Reduce DRY.
-macro_rules! set_exti_g0 {
-    ($pin:expr, $rising:expr, $falling:expr, $val:expr, [$(($num:expr, $crnum:expr, $num2:expr)),+]) => {
-        let exti = unsafe { &(*EXTI::ptr()) };
-
-        paste! {
-            match $pin {
-                $(
+                    #[cfg(feature = "g0")]
                     $num => {
                         exti.imr1.modify(|_, w| w.[<im $num>]().set_bit());  // unmask
                         exti.rtsr1.modify(|_, w| w.[<tr $num>]().bit($rising));  // Rising trigger
@@ -981,19 +953,19 @@ impl Pin {
 
         cfg_if! {
             if #[cfg(feature = "g0")] {
-                set_exti_g0!(self.pin, rising, falling, self.port.cr_val(), [(0, 1, 0_7), (1, 1, 0_7), (2, 1, 0_7),
+                set_exti!(self.pin, rising, falling, self.port.cr_val(), [(0, 1, 0_7), (1, 1, 0_7), (2, 1, 0_7),
                     (3, 1, 0_7), (4, 2, 0_7), (5, 2, 0_7), (6, 2, 0_7), (7, 2, 0_7), (8, 3, 8_15),
                     (9, 3, 8_15), (10, 3, 8_15), (11, 3, 8_15), (12, 4, 8_15),
                     (13, 4, 8_15), (14, 4, 8_15), (15, 4, 8_15)]
                 );
             } else if #[cfg(any(feature = "l5", feature = "h5"))] {
-                set_exti_l5!(self.pin, rising, falling, self.port.cr_val(), [(0, 1, 0_7), (1, 1, 0_7), (2, 1, 0_7),
+                set_exti!(self.pin, rising, falling, self.port.cr_val(), [(0, 1, 0_7), (1, 1, 0_7), (2, 1, 0_7),
                     (3, 1, 0_7), (4, 2, 0_7), (5, 2, 0_7), (6, 2, 0_7), (7, 2, 0_7), (8, 3, 8_15),
                     (9, 3, 8_15), (10, 3, 8_15), (11, 3, 8_15), (12, 4, 8_15),
                     (13, 4, 8_15), (14, 4, 8_15), (15, 4, 8_15)]
                 );
             } else if #[cfg(feature = "f4")] {
-                set_exti_f4!(self.pin, rising, falling, self.port.cr_val(), [(0, 1), (1, 1), (2, 1),
+                set_exti!(self.pin, rising, falling, self.port.cr_val(), [(0, 1), (1, 1), (2, 1),
                         (3, 1), (4, 2), (5, 2), (6, 2), (7, 2), (8, 3), (9, 3), (10, 3), (11, 3), (12, 4),
                         (13, 4), (14, 4), (15, 4)]
                 );
