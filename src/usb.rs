@@ -20,8 +20,6 @@
  Strangely, the register modification commands for the l4x5 have OTG in their names
 */
 
-use core::borrow::BorrowMut;
-
 use cfg_if::cfg_if;
 pub use stm32_usbd::UsbBus;
 use stm32_usbd::UsbPeripheral;

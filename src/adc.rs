@@ -1,17 +1,33 @@
 //! Support for the ADC (Analog to Digital Converter) peripheral.
 
-use core::ptr;
-
 use cfg_if::cfg_if;
-use cortex_m::{asm, delay::Delay};
-use paste::paste;
 
-#[cfg(any(feature = "f3", feature = "l4"))]
+cfg_if! {
+    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
+        use crate::pac::{DMA as DMA1};
+    } else if #[cfg(feature = "f3x4")] {
+        // use crate::pac::DMA1; // oversight?
+    } else if #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5", feature = "f373")))] {
+        use crate::pac::{DMA1, DMA2};
+    }
+}
+
+#[cfg(any(
+    all(feature = "f3", not(any(feature = "f373", feature = "f3x4"))),
+    feature = "l4"
+))]
 use crate::dma::DmaInput;
-#[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))]
-use crate::dma::{self, ChannelCfg, DmaChannel};
+#[cfg(any(feature = "l4"))]
+use crate::dma::channel_select;
+#[cfg(not(any(
+    feature = "f4",
+    feature = "l552",
+    feature = "h5",
+    feature = "f373",
+    feature = "f3x4",
+)))]
 use crate::{
-    clocks::Clocks,
+    dma::{ChannelCfg, Circular, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel},
     pac::{self, RCC},
     util::rcc_en_reset,
 };
@@ -31,13 +47,14 @@ cfg_if! {
         const VREFINT_ADDR: u32 = 0x1FFF_75AA;
         const VREFINT_VOLTAGE: f32 = 3.0;
         const VREFINT_CH: u8 = 18; // G491, G431
-    } else {
+    } else if #[cfg(not(any(feature = "f373", feature = "f3x4")))] {
         const VREFINT_ADDR: u32 = 0x1FFF_75AA;
         const VREFINT_VOLTAGE: f32 = 3.0;
         const VREFINT_CH: u8 = 0; // L412
     }
 }
 
+#[cfg(not(any(feature = "f373", feature = "f3x4")))]
 const MAX_ADVREGEN_STARTUP_US: u32 = 10;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -343,6 +360,7 @@ pub struct Adc<R> {
     pub regs: R,
     // Note: We don't own the common regs; pass them mutably where required, since they may be used
     // by a different ADC.
+    #[cfg(not(any(feature = "f373", feature = "f3x4")))]
     device: AdcDevice,
     pub cfg: AdcConfig,
     /// This field is managed internally, and is set up on init.
@@ -350,10 +368,11 @@ pub struct Adc<R> {
 }
 
 // todo: Remove this macro, and replace using a `regs` fn like you use in GPIO.
+#[cfg(not(any(feature = "f373", feature = "f3x4")))]
 macro_rules! hal {
     ($ADC:ident, $ADC_COMMON:ident, $adc:ident, $rcc_num:tt) => {
         impl Adc<pac::$ADC> {
-            paste! {
+            paste::paste! {
                 /// Initialize an ADC peripheral, including configuration register writes, enabling and resetting
                 /// its RCC peripheral clock, and calibrtation.
                 ///
@@ -380,7 +399,7 @@ macro_rules! hal {
                     // Note: We only perform RCC enabling, not resetingg; resetting will
                     // cause ADCs that share RCC en/reset registers (eg ADC1/2 on G4) that
                     // were previously set up to stop working.
-                    paste! {
+                    paste::paste! {
                         cfg_if! {
                             if #[cfg(feature = "f3")] {
                                 rcc_en_reset!(ahb1, [<adc $rcc_num>], rcc);
@@ -427,7 +446,7 @@ macro_rules! hal {
                         ClockMode::SyncDiv2 => 2,
                         ClockMode::SyncDiv4 => 4,
                     };
-                    asm::delay(adc_per_cpu_cycles * 4 * 2); // additional x2 is a pad;
+                    cortex_m::asm::delay(adc_per_cpu_cycles * 4 * 2); // additional x2 is a pad;
 
                     // "Must be used when ADC clock > 20 MHz
                     // ...The software is allowed to write this bit only when ADSTART=0 and JADSTART=0 (which
@@ -614,7 +633,7 @@ macro_rules! hal {
             ///
             /// This is based on the MAX_ADVREGEN_STARTUP_US of the device.
             fn wait_advregen_startup(&self, ahb_freq: u32) {
-                let cp = unsafe { cortex_m::Peripherals::steal() };
+                let _cp = unsafe { cortex_m::Peripherals::steal() };
                 crate::delay_us(MAX_ADVREGEN_STARTUP_US, ahb_freq)
             }
 
@@ -912,7 +931,7 @@ macro_rules! hal {
 
                     // todo: This address may be different on different MCUs, even within the same family.
                     // Although, it seems relatively consistent. Check User Manuals.
-                    let vrefint_cal: u16 = unsafe { ptr::read_volatile(&*(VREFINT_ADDR as *const _)) };
+                    let vrefint_cal: u16 = unsafe { core::ptr::read_volatile(&*(VREFINT_ADDR as *const _)) };
                     VREFINT_VOLTAGE * vrefint_cal as f32 / reading as f32
                 };
             }
@@ -967,9 +986,11 @@ macro_rules! hal {
             /// Read data from a conversion. In OneShot mode, this will generally be run right
             /// after `start_conversion`.
             pub fn read_result(&mut self) -> u16 {
-                let ch = 18; // todo temp!!
                 #[cfg(feature = "h7")]
-                self.regs.pcsel.modify(|r, w| unsafe { w.pcsel().bits(r.pcsel().bits() & !(1 << ch)) });
+                {
+                    let ch = 18; // todo temp!!
+                    self.regs.pcsel.modify(|r, w| unsafe { w.pcsel().bits(r.pcsel().bits() & !(1 << ch)) });
+                }
 
                 #[cfg(feature = "l4")]
                 return self.regs.dr.read().bits() as u16;
@@ -1005,9 +1026,9 @@ macro_rules! hal {
             pub unsafe fn read_dma(
                 &mut self, buf: &mut [u16],
                 adc_channels: &[u8],
-                dma_channel: DmaChannel,
+                _dma_channel: DmaChannel,
                 channel_cfg: ChannelCfg,
-                dma_periph: dma::DmaPeriph,
+                dma_periph: DmaPeriph,
             ) {
                 let (ptr, len) = (buf.as_mut_ptr(), buf.len());
                 // The software is allowed to write (dmaen and dmacfg) only when ADSTART=0 and JADSTART=0 (which
@@ -1016,7 +1037,7 @@ macro_rules! hal {
 
                 #[cfg(not(feature = "h7"))]
                 self.regs.cfgr.modify(|_, w| {
-                    w.dmacfg().bit(channel_cfg.circular == dma::Circular::Enabled);
+                    w.dmacfg().bit(channel_cfg.circular == Circular::Enabled);
                     w.dmaen().set_bit()
                 });
 
@@ -1024,13 +1045,13 @@ macro_rules! hal {
                 self.regs.cfgr.modify(|_, w| {
                     // Note: To use non-DMA after this has been set, need to configure manually.
                     // ie set back to 0b00.
-                    w.dmngt().bits(if channel_cfg.circular == dma::Circular::Enabled { 0b11 } else { 0b01 })
+                    w.dmngt().bits(if channel_cfg.circular == Circular::Enabled { 0b11 } else { 0b01 })
                 });
 
                 // L44 RM, Table 41. "DMA1 requests for each channel
                 // todo: DMA2 support.
                 #[cfg(any(feature = "f3", feature = "l4"))]
-                let dma_channel = match self.device {
+                let _dma_channel = match self.device {
                     AdcDevice::One => DmaInput::Adc1.dma1_channel(),
                     AdcDevice::Two => DmaInput::Adc2.dma1_channel(),
                     _ => panic!("DMA on ADC beyond 2 is not supported. If it is for your MCU, please submit an issue \
@@ -1039,19 +1060,19 @@ macro_rules! hal {
 
                 #[cfg(feature = "l4")]
                 match dma_periph {
-                    dma::DmaPeriph::Dma1 => {
-                        let mut regs = unsafe { &(*pac::DMA1::ptr()) };
+                    DmaPeriph::Dma1 => {
+                        let mut regs = unsafe { &(*DMA1::ptr()) };
                         match self.device {
-                            AdcDevice::One => dma::channel_select(&mut regs, DmaInput::Adc1),
-                            AdcDevice::Two => dma::channel_select(&mut regs, DmaInput::Adc2),
+                            AdcDevice::One => channel_select(&mut regs, DmaInput::Adc1),
+                            AdcDevice::Two => channel_select(&mut regs, DmaInput::Adc2),
                             _ => unimplemented!(),
                         }
                     }
-                    dma::DmaPeriph::Dma2 => {
-                        let mut regs = unsafe { &(*pac::DMA2::ptr()) };
+                    DmaPeriph::Dma2 => {
+                        let mut regs = unsafe { &(*DMA2::ptr()) };
                         match self.device {
-                            AdcDevice::One => dma::channel_select(&mut regs, DmaInput::Adc1),
-                            AdcDevice::Two => dma::channel_select(&mut regs, DmaInput::Adc2),
+                            AdcDevice::One => channel_select(&mut regs, DmaInput::Adc1),
+                            AdcDevice::Two => channel_select(&mut regs, DmaInput::Adc2),
                             _ => unimplemented!(),
                         }
                     }
@@ -1108,32 +1129,32 @@ macro_rules! hal {
                 let num_data = len as u16;
 
                 match dma_periph {
-                    dma::DmaPeriph::Dma1 => {
-                        let mut regs = unsafe { &(*pac::DMA1::ptr()) };
-                        dma::cfg_channel(
+                    DmaPeriph::Dma1 => {
+                        let mut regs = unsafe { &(*DMA1::ptr()) };
+                        cfg_channel(
                             &mut regs,
-                            dma_channel,
+                            _dma_channel,
                             &self.regs.dr as *const _ as u32,
                             ptr as u32,
                             num_data,
-                            dma::Direction::ReadFromPeriph,
-                            dma::DataSize::S16,
-                            dma::DataSize::S16,
+                            Direction::ReadFromPeriph,
+                            DataSize::S16,
+                            DataSize::S16,
                             channel_cfg,
                         );
                     }
                     #[cfg(not(feature = "g0"))]
-                    dma::DmaPeriph::Dma2 => {
-                        let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                        dma::cfg_channel(
+                    DmaPeriph::Dma2 => {
+                        let mut regs = unsafe { &(*DMA2::ptr()) };
+                        cfg_channel(
                             &mut regs,
-                            dma_channel,
+                            _dma_channel,
                             &self.regs.dr as *const _ as u32,
                             ptr as u32,
                             num_data,
-                            dma::Direction::ReadFromPeriph,
-                            dma::DataSize::S16,
-                            dma::DataSize::S16,
+                            Direction::ReadFromPeriph,
+                            DataSize::S16,
+                            DataSize::S16,
                             channel_cfg,
                         );
                     }
@@ -1197,59 +1218,47 @@ macro_rules! hal {
     }
 }
 
-#[cfg(any(feature = "f301", feature = "f302", feature = "f303",))]
-hal!(ADC1, ADC1_2, adc1, 12);
-
-#[cfg(any(feature = "f302", feature = "f303",))]
-hal!(ADC2, ADC1_2, adc2, 12);
-
-#[cfg(any(feature = "f303"))]
-hal!(ADC3, ADC3_4, adc3, 34);
-
-#[cfg(any(feature = "f303"))]
-hal!(ADC4, ADC3_4, adc4, 34);
-
-#[cfg(any(feature = "l4"))]
-hal!(ADC1, ADC_COMMON, adc1, _);
-
-#[cfg(any(
-    feature = "l4x1",
-    feature = "l4x2",
-    feature = "l412",
-    feature = "l4x5",
-    feature = "l4x6",
-))]
-hal!(ADC2, ADC_COMMON, adc2, _);
-
-#[cfg(any(feature = "l4x5", feature = "l4x6",))]
-hal!(ADC3, ADC_COMMON, adc3, _);
-
-// todo: ADC 1 vs 2 on L5? L5 supports up to 2 ADCs, so I'm not sure what's going on here.
-#[cfg(any(feature = "l5"))]
-hal!(ADC, ADC_COMMON, adc1, _);
-
-// todo Implement ADC3 on H7. The issue is the enable / reset being on ahb4.
 cfg_if! {
-    if #[cfg(feature = "h7")] {
+    if #[cfg(feature = "f3")] {
+        // no f373 or f3x4, oversight?
+        #[cfg(any(feature = "f301", feature = "f302", feature = "f303",))]
+        hal!(ADC1, ADC1_2, adc1, 12);
+        #[cfg(any(feature = "f302", feature = "f303",))]
+        hal!(ADC2, ADC1_2, adc2, 12);
+        #[cfg(any(feature = "f303"))]
+        hal!(ADC3, ADC3_4, adc3, 34);
+        #[cfg(any(feature = "f303"))]
+        hal!(ADC4, ADC3_4, adc4, 34);
+    } else if #[cfg(any(feature = "l4"))] {
+        hal!(ADC1, ADC_COMMON, adc1, _);
+        #[cfg(any(
+            feature = "l4x1",
+            feature = "l4x2",
+            feature = "l412",
+            feature = "l4x5",
+            feature = "l4x6",
+        ))]
+        hal!(ADC2, ADC_COMMON, adc2, _);
+
+        #[cfg(any(feature = "l4x5", feature = "l4x6",))]
+        hal!(ADC3, ADC_COMMON, adc3, _);
+    }
+    // todo: ADC 1 vs 2 on L5? L5 supports up to 2 ADCs, so I'm not sure what's going on here.
+    else if #[cfg(any(feature = "l5"))] {
+        hal!(ADC, ADC_COMMON, adc1, _);
+    // todo Implement ADC3 on H7. The issue is the enable / reset being on ahb4.
+    } else if #[cfg(feature = "h7")] {
         hal!(ADC1, ADC12_COMMON, adc1, 12);
         hal!(ADC2, ADC12_COMMON, adc2, 12);
         hal!(ADC3, ADC3_COMMON, adc3, 3);
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "g4")] {
+    } else if #[cfg(feature = "g4")] {
         hal!(ADC1, ADC12_COMMON, adc1, 12);
         hal!(ADC2, ADC12_COMMON, adc2, 12);
-    }
-}
-
-#[cfg(all(feature = "g4", not(any(feature = "g431", feature = "g441"))))]
-hal!(ADC3, ADC345_COMMON, adc3, 345);
-
-cfg_if! {
-    if #[cfg(any(feature = "g473", feature = "g474", feature = "g483", feature = "g484"))] {
+        #[cfg(all(feature = "g4", not(any(feature = "g431", feature = "g441"))))]
+        hal!(ADC3, ADC345_COMMON, adc3, 345);
+        #[cfg(any(feature = "g473", feature = "g474", feature = "g483", feature = "g484"))]
         hal!(ADC4, ADC345_COMMON, adc4, 345);
+        #[cfg(any(feature = "g473", feature = "g474", feature = "g483", feature = "g484"))]
         hal!(ADC5, ADC345_COMMON, adc5, 345);
     }
 }

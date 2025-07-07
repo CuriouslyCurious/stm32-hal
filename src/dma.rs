@@ -41,7 +41,7 @@ cfg_if! {
     }
 }
 
-use crate::pac::{self, RCC};
+use crate::pac::RCC;
 #[cfg(not(feature = "f3"))]
 use crate::util::rcc_en_reset;
 
@@ -1627,7 +1627,7 @@ pub fn stop(periph: DmaPeriph, channel: DmaChannel) {
         }
         #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
         DmaPeriph::Dma2 => {
-            let mut regs = unsafe { &(*pac::DMA2::ptr()) };
+            let mut regs = unsafe { &(*DMA2::ptr()) };
             stop_internal(&mut regs, channel);
         }
     }
@@ -2017,7 +2017,7 @@ pub fn enable_interrupt(periph: DmaPeriph, channel: DmaChannel, interrupt: DmaIn
         }
         #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
         DmaPeriph::Dma2 => {
-            let mut regs = unsafe { &(*pac::DMA2::ptr()) };
+            let mut regs = unsafe { &(*DMA2::ptr()) };
             enable_interrupt_internal(&mut regs, channel, interrupt);
         }
     }
@@ -2032,7 +2032,7 @@ pub fn disable_interrupt(periph: DmaPeriph, channel: DmaChannel, interrupt: DmaI
         }
         #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
         DmaPeriph::Dma2 => {
-            let mut regs = unsafe { &(*pac::DMA2::ptr()) };
+            let mut regs = unsafe { &(*DMA2::ptr()) };
             disable_interrupt_internal(&mut regs, channel, interrupt);
         }
     }

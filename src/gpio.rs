@@ -28,7 +28,9 @@ cfg_if! {
 use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel};
 #[cfg(any(feature = "l4", feature = "l5", feature = "g4"))]
 use crate::pac::PWR;
-use crate::pac::{EXTI, RCC, SYSCFG, gpioa};
+#[cfg(not(any(feature = "f373", feature = "wl")))]
+use crate::pac::SYSCFG;
+use crate::pac::{EXTI, RCC, gpioa};
 #[cfg(not(feature = "h7"))]
 use crate::util::rcc_en_reset;
 
@@ -182,6 +184,7 @@ pub enum Port {
     I,
 }
 
+#[cfg(not(any(feature = "f373")))]
 impl Port {
     /// See F303 RM section 12.1.3: each reg has an associated value
     fn cr_val(&self) -> u8 {
@@ -1370,7 +1373,7 @@ pub fn write_dma(
                 channel_cfg,
             );
         }
-        #[cfg(not(any(feature = "g0", feature = "wb")))]
+        #[cfg(not(any(feature = "g0", feature = "wb", feature = "f3x4")))]
         DmaPeriph::Dma2 => {
             let mut regs = unsafe { &(*DMA2::ptr()) };
             cfg_channel(
@@ -1421,7 +1424,7 @@ pub fn read_dma(
                 channel_cfg,
             );
         }
-        #[cfg(not(any(feature = "g0", feature = "wb")))]
+        #[cfg(not(any(feature = "g0", feature = "wb", feature = "f3x4")))]
         DmaPeriph::Dma2 => {
             let mut regs = unsafe { &(*DMA2::ptr()) };
             cfg_channel(

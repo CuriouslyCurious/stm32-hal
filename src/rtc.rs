@@ -4,12 +4,14 @@
 
 //! Uses [Chrono](https://docs.rs/chrono) for dates and times.
 
-use core::convert::TryInto;
-
 use cfg_if::cfg_if;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 
-use crate::pac::{EXTI, PWR, RCC, RTC};
+use core::convert::TryInto;
+
+#[cfg(not(feature = "f373"))]
+use crate::pac::EXTI;
+use crate::pac::{PWR, RCC, RTC};
 
 // todo: QC use of ICSR vice SR and ISR wherever used in this module!
 
