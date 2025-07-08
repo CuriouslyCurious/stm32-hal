@@ -5,16 +5,20 @@ use core::ops::Deref;
 #[cfg(not(any(feature = "f", feature = "l5", feature = "g4")))]
 use cortex_m::delay::Delay;
 
-use crate::{
-    pac::{self, RCC},
-    util::RccPeriph,
-};
-
+cfg_if! {
+    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
+        use crate::pac::{DMA as DMA1};
+    } else if #[cfg(feature = "f3x4")] {
+        use crate::pac::DMA1;
+    } else if #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))] {
+        use crate::pac::{DMA1, DMA2};
+    }
+}
 cfg_if! {
     if #[cfg(any(feature = "f3", feature = "l412", feature = "g4", feature = "h7b3"))] {
-        use pac::dac1 as dac_p;
+        use crate::pac::dac1::RegisterBlock;
     } else {
-        use pac::dac as dac_p;
+        use crate::pac::dac::RegisterBlock;
     }
 }
 
@@ -22,10 +26,7 @@ cfg_if! {
 use crate::dma::DmaInput;
 #[cfg(not(any(feature = "f4", feature = "l552")))]
 use crate::dma::{self, ChannelCfg, DmaChannel};
-#[cfg(feature = "g0")]
-use crate::pac::DMA as DMA1;
-#[cfg(not(feature = "g0"))]
-use crate::pac::DMA1;
+use crate::{pac::RCC, util::RccPeriph};
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -264,7 +265,7 @@ pub struct Dac<R> {
 
 impl<R> Dac<R>
 where
-    R: Deref<Target = dac_p::RegisterBlock> + RccPeriph,
+    R: Deref<Target = RegisterBlock> + RccPeriph,
 {
     /// Initialize a DAC peripheral, including  enabling and resetting
     /// its RCC peripheral clock. `vref` is in volts.
@@ -461,7 +462,7 @@ where
                 }
             }
             dma::DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*pac::DMA2::ptr()) };
+                let mut regs = unsafe { &(*DMA2::ptr()) };
                 match dac_channel {
                     DacChannel::C1 => dma::channel_select(&mut regs, DmaInput::Dac1Ch1),
                     DacChannel::C2 => dma::channel_select(&mut regs, DmaInput::Dac1Ch2),
@@ -565,7 +566,7 @@ where
             }
             #[cfg(not(any(feature = "f3x4", feature = "g0")))]
             dma::DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*pac::DMA2::ptr()) };
+                let mut regs = unsafe { &(*DMA2::ptr()) };
                 dma::cfg_channel(
                     &mut regs,
                     _dma_channel,

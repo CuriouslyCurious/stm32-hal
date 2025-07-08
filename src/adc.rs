@@ -47,14 +47,14 @@ cfg_if! {
         const VREFINT_ADDR: u32 = 0x1FFF_75AA;
         const VREFINT_VOLTAGE: f32 = 3.0;
         const VREFINT_CH: u8 = 18; // G491, G431
-    } else if #[cfg(not(any(feature = "f373", feature = "f3x4")))] {
+    } else if #[cfg(not(any(feature = "f373", feature = "f3x4", feature = "f4")))] {
         const VREFINT_ADDR: u32 = 0x1FFF_75AA;
         const VREFINT_VOLTAGE: f32 = 3.0;
         const VREFINT_CH: u8 = 0; // L412
     }
 }
 
-#[cfg(not(any(feature = "f373", feature = "f3x4")))]
+#[cfg(not(any(feature = "f373", feature = "f3x4", feature = "f4")))]
 const MAX_ADVREGEN_STARTUP_US: u32 = 10;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -360,7 +360,7 @@ pub struct Adc<R> {
     pub regs: R,
     // Note: We don't own the common regs; pass them mutably where required, since they may be used
     // by a different ADC.
-    #[cfg(not(any(feature = "f373", feature = "f3x4")))]
+    #[cfg(not(any(feature = "f373", feature = "f3x4", feature = "f4")))]
     device: AdcDevice,
     pub cfg: AdcConfig,
     /// This field is managed internally, and is set up on init.
@@ -368,7 +368,7 @@ pub struct Adc<R> {
 }
 
 // todo: Remove this macro, and replace using a `regs` fn like you use in GPIO.
-#[cfg(not(any(feature = "f373", feature = "f3x4")))]
+#[cfg(not(any(feature = "f373", feature = "f3x4", feature = "f4")))]
 macro_rules! hal {
     ($ADC:ident, $ADC_COMMON:ident, $adc:ident, $rcc_num:tt) => {
         impl Adc<pac::$ADC> {

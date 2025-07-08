@@ -1,9 +1,23 @@
+use cfg_if::cfg_if;
+
 use core::{ops::Deref, ptr};
 
 use super::*;
+
+cfg_if! {
+    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
+        use crate::pac::{DMA as DMA1};
+    } else if #[cfg(feature = "f3x4")] {
+        use crate::pac::DMA1;
+    } else if #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))] {
+        use crate::pac::{DMA1, DMA2};
+    }
+}
+#[cfg(not(any(feature = "f4", feature = "l552")))]
+use crate::dma::{DataSize as DmaDataSize, Direction, DmaPeriph, cfg_channel};
 use crate::{
     MAX_ITERS, check_errors,
-    pac::{self, RCC},
+    pac::{RCC, spi1::RegisterBlock},
     util::RccPeriph,
 };
 
@@ -44,7 +58,7 @@ pub enum DataSize {
 
 impl<R> Spi<R>
 where
-    R: Deref<Target = pac::spi1::RegisterBlock> + RccPeriph,
+    R: Deref<Target = RegisterBlock> + RccPeriph,
 {
     /// Initialize an SPI peripheral, including configuration register writes, and enabling and resetting
     /// its RCC peripheral clock.
@@ -261,7 +275,7 @@ where
         buf: &mut [u8],
         _channel: DmaChannel,
         channel_cfg: ChannelCfg,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
     ) {
         // todo: Accept u16 words too.
         let (ptr, len) = (buf.as_mut_ptr(), buf.len());
@@ -280,32 +294,32 @@ where
         let num_data = len as u16;
 
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
                     _channel,
                     periph_addr,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromPeriph,
+                    DmaDataSize::S8,
+                    DmaDataSize::S8,
                     channel_cfg,
                 );
             }
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
-            dma::DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                dma::cfg_channel(
+            DmaPeriph::Dma2 => {
+                let mut regs = unsafe { &(*DMA2::ptr()) };
+                cfg_channel(
                     &mut regs,
                     _channel,
                     periph_addr,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromPeriph,
+                    DmaDataSize::S8,
+                    DmaDataSize::S8,
                     channel_cfg,
                 );
             }
@@ -323,7 +337,7 @@ where
         buf: &[u8],
         _channel: DmaChannel,
         channel_cfg: ChannelCfg,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
     ) {
         // Static write and read buffers?
         let (ptr, len) = (buf.as_ptr(), buf.len());
@@ -356,32 +370,32 @@ where
         let num_data = len as u16;
 
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
                     _channel,
                     periph_addr,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromMem,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromMem,
+                    DmaDataSize::S8,
+                    DmaDataSize::S8,
                     channel_cfg,
                 );
             }
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
-            dma::DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                dma::cfg_channel(
+            DmaPeriph::Dma2 => {
+                let mut regs = unsafe { &(*DMA2::ptr()) };
+                cfg_channel(
                     &mut regs,
                     _channel,
                     periph_addr,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromMem,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromMem,
+                    DmaDataSize::S8,
+                    DmaDataSize::S8,
                     channel_cfg,
                 );
             }
@@ -405,7 +419,7 @@ where
         _channel_read: DmaChannel,
         channel_cfg_write: ChannelCfg,
         channel_cfg_read: ChannelCfg,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
     ) {
         // todo: Accept u16 words too.
         let (ptr_write, len_write) = (buf_write.as_ptr(), buf_write.len());
@@ -439,56 +453,56 @@ where
         #[cfg(feature = "l4")]
         R::write_sel(&mut dma_regs);
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
                     _channel_write,
                     periph_addr_write,
                     ptr_write as u32,
                     num_data_write,
-                    dma::Direction::ReadFromMem,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromMem,
+                    DmaDataSize::S8,
+                    DmaDataSize::S8,
                     channel_cfg_write,
                 );
 
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
                     _channel_read,
                     periph_addr_read,
                     ptr_read as u32,
                     num_data_read,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromPeriph,
+                    DmaDataSize::S8,
+                    DmaDataSize::S8,
                     channel_cfg_read,
                 );
             }
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
-            dma::DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                dma::cfg_channel(
+            DmaPeriph::Dma2 => {
+                let mut regs = unsafe { &(*DMA2::ptr()) };
+                cfg_channel(
                     &mut regs,
                     _channel_write,
                     periph_addr_write,
                     ptr_write as u32,
                     num_data_write,
-                    dma::Direction::ReadFromMem,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromMem,
+                    DmaDataSize::S8,
+                    DmaDataSize::S8,
                     channel_cfg_write,
                 );
 
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
                     _channel_read,
                     periph_addr_read,
                     ptr_read as u32,
                     num_data_read,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromPeriph,
+                    DmaDataSize::S8,
+                    DmaDataSize::S8,
                     channel_cfg_read,
                 );
             }

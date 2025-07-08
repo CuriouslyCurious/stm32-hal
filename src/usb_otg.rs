@@ -15,17 +15,12 @@ use cfg_if::cfg_if;
 pub use synopsys_usb_otg::UsbBus;
 use synopsys_usb_otg::UsbPeripheral;
 
-use crate::{
-    gpio::Pin,
-    pac::{self, PWR, RCC},
-};
-
 cfg_if! {
     if #[cfg(feature = "usbotg_hs")] {
         // On older H7s (H743 etc), OTG1 maps to pisn PB14 and PB15.
-        type Usb1GlobalRegType = pac::OTG1_HS_GLOBAL;
-        type Usb1DeviceRegType = pac::OTG1_HS_DEVICE;
-        type Usb1PwrclkRegType = pac::OTG1_HS_PWRCLK;
+        type Usb1GlobalRegType = crate::pac::OTG1_HS_GLOBAL;
+        type Usb1DeviceRegType = crate::pac::OTG1_HS_DEVICE;
+        type Usb1PwrclkRegType = crate::pac::OTG1_HS_PWRCLK;
 
         cfg_if!{
         // Note that on STM32H743 and related MCUs, OTG2 is known as "USB-FS", which
@@ -33,18 +28,24 @@ cfg_if! {
         // for those MCUs. On newer ones like H723, use OTG1, which in that case, still
         // maps to PA11 and PA12.
             if #[cfg(not(any(feature = "h735", feature = "h7b3")))] {
-                type Usb2RegGlobalType = pac::OTG2_HS_GLOBAL;
-                type Usb2RegDeviceType = pac::OTG2_HS_DEVICE;
-                type Usb2RegPwrclkType = pac::OTG2_HS_PWRCLK;
+                type Usb2RegGlobalType = crate::pac::OTG2_HS_GLOBAL;
+                type Usb2RegDeviceType = crate::pac::OTG2_HS_DEVICE;
+                type Usb2RegPwrclkType = crate::pac::OTG2_HS_PWRCLK;
             }
         }
     } else if #[cfg(feature = "usbotg_fs")] {
         // Eg F4 and L4x6.
-        type Usb1GlobalRegType = pac::OTG_FS_GLOBAL;
-        type Usb1DeviceRegType = pac::OTG_FS_DEVICE;
-        type Usb1PwrclkRegType = pac::OTG_FS_PWRCLK;
+        type Usb1GlobalRegType = crate::pac::OTG_FS_GLOBAL;
+        type Usb1DeviceRegType = crate::pac::OTG_FS_DEVICE;
+        type Usb1PwrclkRegType = crate::pac::OTG_FS_PWRCLK;
     }
 }
+
+#[cfg(feature = "h7")]
+use crate::gpio::Pin;
+#[cfg(any(feature = "h7", feature = "l4x6"))]
+use crate::pac::PWR;
+use crate::pac::RCC;
 
 pub struct Usb1 {
     pub usb_global: Usb1GlobalRegType,
@@ -112,16 +113,7 @@ macro_rules! usb_peripheral {
             const ENDPOINT_COUNT: usize = 9; // <--
 
             fn enable() {
-                let pwr = unsafe { &*PWR::ptr() };
                 let rcc = unsafe { &*RCC::ptr() };
-
-                // USB Regulator in BYPASS mode
-                #[cfg(feature = "h7")]
-                // pwr.cr3.modify(|_, w| w.usbregen().set_bit()); // todo ?
-                pwr.cr3.modify(|_, w| w.usb33den().set_bit());
-                #[cfg(feature = "l4x6")] // this was present in the usb module
-                pwr.cr2.modify(|_, w| w.usv().set_bit());
-                // The f4 doesn't seem to have anything similar
 
                 // Enable USB peripheral
                 rcc.$clock_enable_reg.modify(|_, w| w.$en().set_bit());
@@ -129,6 +121,18 @@ macro_rules! usb_peripheral {
                 // Reset USB peripheral
                 rcc.$reset_reg.modify(|_, w| w.$rst().set_bit());
                 rcc.$reset_reg.modify(|_, w| w.$rst().clear_bit());
+
+                #[cfg(any(feature = "h7", feature = "l4x6"))]
+                {
+                    let pwr = unsafe { &*PWR::ptr() };
+                    // USB Regulator in BYPASS mode
+                    #[cfg(feature = "h7")]
+                    // pwr.cr3.modify(|_, w| w.usbregen().set_bit()); // todo ?
+                    pwr.cr3.modify(|_, w| w.usb33den().set_bit());
+                    #[cfg(feature = "l4x6")] // this was present in the usb module
+                    pwr.cr2.modify(|_, w| w.usv().set_bit());
+                    // The f4 doesn't seem to have anything similar
+                }
             }
 
             fn ahb_frequency_hz(&self) -> u32 {
@@ -199,7 +203,7 @@ cfg_if! {
             const ENDPOINT_COUNT: usize = 9;
 
             fn enable() {
-                let rcc = unsafe { &*pac::RCC::ptr() };
+                let rcc = unsafe { &*RCC::ptr() };
 
                 // Enable USB peripheral
                 rcc.ahb1enr.modify(|_, w| w.usb1otgen().enabled());

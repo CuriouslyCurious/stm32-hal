@@ -6,16 +6,8 @@ use cfg_if::cfg_if;
 
 use core::ops::Deref;
 
-cfg_if! {
-    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
-        use crate::pac::DMA as DMA1;
-    } else {
-        use crate::pac::DMA1;
-    }
-}
-
 #[cfg(not(any(feature = "f4", feature = "l552")))]
-use crate::dma::{self, ChannelCfg, DmaChannel, DmaInterrupt, DmaPeriph, clear_interrupt, stop};
+use crate::dma::{ChannelCfg, DmaChannel, DmaInterrupt, DmaPeriph, clear_interrupt, stop};
 use crate::{pac::spi1, util::RccPeriph}; // todo temp
 
 cfg_if::cfg_if! {

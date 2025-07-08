@@ -254,10 +254,11 @@ enum WaitState {
     W4 = 4,
     #[cfg(feature = "f4")]
     W5 = 5,
-    #[cfg(feature = "f4")]
-    W6 = 6,
-    #[cfg(feature = "f4")]
-    W7 = 7,
+    // todo: Unused atm
+    // #[cfg(feature = "f4")]
+    // W6 = 6,
+    // #[cfg(feature = "f4")]
+    // W7 = 7,
 }
 
 #[derive(Clone, Copy)]
@@ -433,6 +434,7 @@ impl Clocks {
                     } else {
                         w.latency().bits(WaitState::W5 as u8)
                     }
+                    // missing W6, W7
                 });
             }
         }

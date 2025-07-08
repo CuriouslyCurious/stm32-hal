@@ -13,13 +13,14 @@ cfg_if! {
         use crate::pac::DMA1;
     }
 }
-
 #[cfg(not(any(feature = "l552", feature = "h5")))]
-use crate::dma::{self, ChannelCfg, DmaChannel};
+use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel};
+#[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
+use crate::pac::DMA2;
 use crate::{
     MAX_ITERS,
     clocks::Clocks,
-    pac::{self, RCC},
+    pac::{RCC, i2c1::RegisterBlock},
     util::RccPeriph,
 };
 
@@ -169,7 +170,7 @@ pub struct I2c<R> {
 
 impl<R> I2c<R>
 where
-    R: Deref<Target = pac::i2c1::RegisterBlock> + RccPeriph,
+    R: Deref<Target = RegisterBlock> + RccPeriph,
 {
     /// Initialize a I2C peripheral, including configuration register writes, and enabling and resetting
     /// its RCC peripheral clock. `freq` is in Hz.
@@ -574,7 +575,7 @@ where
         autoend: bool,
         _channel: DmaChannel,
         channel_cfg: ChannelCfg,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
     ) {
         let (ptr, len) = (buf.as_ptr(), buf.len());
 
@@ -619,32 +620,32 @@ where
         let num_data = len as u16;
 
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
                     _channel,
                     &self.regs.txdr as *const _ as u32,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromMem,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromMem,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
-            dma::DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                dma::cfg_channel(
+            DmaPeriph::Dma2 => {
+                let mut regs = unsafe { &(*DMA2::ptr()) };
+                cfg_channel(
                     &mut regs,
                     _channel,
                     &self.regs.txdr as *const _ as u32,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromMem,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromMem,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }
@@ -661,7 +662,7 @@ where
         buf: &mut [u8],
         _channel: DmaChannel,
         channel_cfg: ChannelCfg,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
     ) {
         let (ptr, len) = (buf.as_mut_ptr(), buf.len());
 
@@ -700,32 +701,32 @@ where
         let num_data = len as u16;
 
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
                     _channel,
                     &self.regs.rxdr as *const _ as u32,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromPeriph,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
-            dma::DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                dma::cfg_channel(
+            DmaPeriph::Dma2 => {
+                let mut regs = unsafe { &(*DMA2::ptr()) };
+                cfg_channel(
                     &mut regs,
                     _channel,
                     &self.regs.rxdr as *const _ as u32,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromPeriph,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }

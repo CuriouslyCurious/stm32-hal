@@ -9,11 +9,10 @@ use core::ops::Deref;
 
 #[cfg(feature = "embedded_hal")]
 use embedded_hal::i2c::{ErrorKind, NoAcknowledgeSource, Operation, SevenBitAddress};
-use paste::paste;
 
 use crate::{
     clocks::Clocks,
-    pac::{self, RCC, i2c1},
+    pac::{RCC, i2c1},
     util::rcc_en_reset,
 };
 

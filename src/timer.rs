@@ -11,7 +11,6 @@ use num_traits::float::FloatCore;
 use paste::paste; // To round floats.
 
 use core::{
-    ops::Deref,
     sync::atomic::{AtomicU32, Ordering},
     time::Duration,
 };
@@ -23,22 +22,52 @@ cfg_if! {
 }
 
 cfg_if! {
-    if #[cfg(feature = "g0")] {
-        use crate::pac::DMA as DMA1;
-    } else if #[cfg(not(any(feature = "g0", feature = "f", feature = "l552", feature = "l4")))] {
-        use crate::pac::DMA1;
+    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
+        use crate::pac::{DMA as DMA1};
+    // } else if #[cfg(feature = "f3x4")] {
+        // use crate::pac::DMA1;
+        // todo: F-family excluded for now
+    } else if #[cfg(not(any(feature = "f", feature = "l552", feature = "h5")))] {
+        use crate::pac::{DMA1, DMA2};
     }
 }
 
-// #[cfg(not(any(feature = "f4", feature = "l552")))]
-// use crate::dma::{self, ChannelCfg, DmaChannel};
+cfg_if! {
+    if #[cfg(not(any(
+        feature = "f4",
+        feature = "g031",
+        feature = "g041",
+        feature = "g070",
+        feature = "g030",
+        feature = "wb",
+        feature = "wl"
+    )))]  {
+        use core::ops::Deref;
+        use crate::pac::tim6::RegisterBlock;
+    } else {
 
+    }
+}
+
+#[cfg(not(any(feature = "f", feature = "l552")))]
+use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, cfg_channel};
+
+#[cfg(not(any(
+    feature = "f4",
+    feature = "g031",
+    feature = "g041",
+    feature = "g070",
+    feature = "g030",
+    feature = "wb",
+    feature = "wl"
+)))]
+use crate::util::RccPeriph;
 // todo: LPTIM (low-power timers) and HRTIM (high-resolution timers). And Advanced control functionality
 use crate::{
     clocks::Clocks,
     instant::Instant,
-    pac::{self, RCC},
-    util::{RccPeriph, rcc_en_reset},
+    pac::{self, Peripherals, RCC},
+    util::rcc_en_reset,
 };
 
 // This `TICK_OVERFLOW_COUNT` must be incremented in firmware in the timer's update interrupt.
@@ -654,7 +683,7 @@ macro_rules! make_timer {
                 dma_channel: DmaChannel,
                 channel_cfg: ChannelCfg,
                 ds_32_bits: bool,
-                dma_periph: dma::DmaPeriph,
+                dma_periph: DmaPeriph,
             ) {
                 // Note: F3 and L4 are unsupported here, since I'm not sure how to select teh
                 // correct Timer channel.
@@ -727,36 +756,36 @@ macro_rules! make_timer {
 
                 // 5. Enable the DMA channel
                 match dma_periph {
-                    dma::DmaPeriph::Dma1 => {
+                    DmaPeriph::Dma1 => {
                         let mut regs = unsafe { &(*DMA1::ptr()) };
-                        dma::cfg_channel(
+                        cfg_channel(
                             &mut regs,
                             dma_channel,
                             periph_addr,
                             ptr as u32,
                             num_data,
-                            dma::Direction::ReadFromMem,
+                            Direction::ReadFromMem,
                             // Note: This may only be relevant if modifying a reg that changes for 32-bit
                             // timers, like AAR and CCRx
-                            if ds_32_bits { dma::DataSize::S32} else { dma::DataSize::S16 },
-                            dma::DataSize::S16,
+                            if ds_32_bits { DataSize::S32} else { DataSize::S16 },
+                            DataSize::S16,
                             channel_cfg,
                         );
                     }
                     #[cfg(not(any(feature = "g0", feature = "wb")))]
-                    dma::DmaPeriph::Dma2 => {
-                        let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                        dma::cfg_channel(
+                    DmaPeriph::Dma2 => {
+                        let mut regs = unsafe { &(*DMA2::ptr()) };
+                        cfg_channel(
                             &mut regs,
                             dma_channel,
                             periph_addr,
                             ptr as u32,
                             num_data,
-                            dma::Direction::ReadFromMem,
+                            Direction::ReadFromMem,
                             // Note: This may only be relevant if modifying a reg that changes for 32-bit
                             // timers, like AAR and CCRx
-                            if ds_32_bits { dma::DataSize::S32} else { dma::DataSize::S16 },
-                            dma::DataSize::S16,
+                            if ds_32_bits { DataSize::S32} else { DataSize::S16 },
+                            DataSize::S16,
                             channel_cfg,
                         );
                     }
@@ -774,7 +803,7 @@ macro_rules! make_timer {
                 dma_channel: DmaChannel,
                 channel_cfg: ChannelCfg,
                 ds_32_bits: bool,
-                dma_periph: dma::DmaPeriph,
+                dma_periph: DmaPeriph,
             ) {
                 let (ptr, len) = (buf.as_mut_ptr(), buf.len());
 
@@ -793,36 +822,36 @@ macro_rules! make_timer {
                 self.enable();
 
                 match dma_periph {
-                    dma::DmaPeriph::Dma1 => {
-                        let mut regs = unsafe { &(*pac::DMA1::ptr()) };
-                        dma::cfg_channel(
+                    DmaPeriph::Dma1 => {
+                        let mut regs = unsafe { &(*DMA1::ptr()) };
+                        cfg_channel(
                             &mut regs,
                             dma_channel,
                             periph_addr,
                             ptr as u32,
                             num_data,
-                            dma::Direction::ReadFromPeriph,
+                            Direction::ReadFromPeriph,
                             // Note: This may only be relevant if modifying a reg that changes for 32-bit
                             // timers, like AAR and CCRx
-                            if ds_32_bits { dma::DataSize::S32} else { dma::DataSize::S16 },
-                            dma::DataSize::S16,
+                            if ds_32_bits { DataSize::S32} else { DataSize::S16 },
+                            DataSize::S16,
                             channel_cfg,
                         );
                     }
                     #[cfg(not(any(feature = "g0", feature = "wb")))]
-                    dma::DmaPeriph::Dma2 => {
-                        let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                        dma::cfg_channel(
+                    DmaPeriph::Dma2 => {
+                        let mut regs = unsafe { &(*DMA2::ptr()) };
+                        cfg_channel(
                             &mut regs,
                             dma_channel,
                             periph_addr,
                             ptr as u32,
                             num_data,
-                            dma::Direction::ReadFromPeriph,
+                            Direction::ReadFromPeriph,
                             // Note: This may only be relevant if modifying a reg that changes for 32-bit
                             // timers, like AAR and CCRx
-                            if ds_32_bits { dma::DataSize::S32} else { dma::DataSize::S16 },
-                            dma::DataSize::S16,
+                            if ds_32_bits { DataSize::S32} else { DataSize::S16 },
+                            DataSize::S16,
                             channel_cfg,
                         );
                     }
@@ -1656,6 +1685,15 @@ macro_rules! cc_2_channels {
     }
 }
 
+#[cfg(not(any(
+    feature = "f4",
+    feature = "g031",
+    feature = "g041",
+    feature = "g070",
+    feature = "g030",
+    feature = "wb",
+    feature = "wl"
+)))]
 macro_rules! cc_1_channel {
     ($TIMX:ident, $res:ident) => {
         impl Timer<pac::$TIMX> {
@@ -1899,10 +1937,7 @@ fn calc_freq_vals(freq: f32, clock_speed: u32) -> Result<(u16, u16), ValueError>
 
 cfg_if! {
     if #[cfg(not(any(
-        feature = "f401",
-        feature = "f410",
-        feature = "f411",
-        feature = "f413",
+        feature = "f4",
         feature = "g031",
         feature = "g041",
         feature = "g070",
@@ -1918,7 +1953,7 @@ cfg_if! {
 
         impl<R> BasicTimer<R>
             where
-                R: Deref<Target = pac::tim6::RegisterBlock> + RccPeriph,
+                R: Deref<Target = RegisterBlock> + RccPeriph,
         {
             /// Initialize a Basic timer, including  enabling and resetting
             /// its RCC peripheral clock.
@@ -2019,7 +2054,7 @@ cfg_if! {
 /// A freestanding function that does not require access to a `Timer` struct. Clears the Update interrupt.
 pub fn clear_update_interrupt(tim_num: u8) {
     unsafe {
-        let periphs = pac::Peripherals::steal();
+        let periphs = Peripherals::steal();
 
         // todo: This is likely to fail on some variants, and it's missing a number of timer periphs.
 
@@ -2097,15 +2132,18 @@ pub fn clear_update_interrupt(tim_num: u8) {
 
 // Advanced: 1/8/20
 
-#[cfg(not(any(feature = "f373")))]
-make_timer!(TIM1, tim1, 2, u16);
+cfg_if! {
+    if #[cfg(not(any(feature = "f373")))] {
+        make_timer!(TIM1, tim1, 2, u16);
+        #[cfg(not(any(feature = "g0", feature = "g4")))]
+        cc_4_channels!(TIM1, u16);
+        // todo: PAC error?
+        // TIM1 on G4 is nominally 16-bits, but has ~20 bits on ARR, with PAC showing 32 bits?
+        #[cfg(any(feature = "g0", feature = "g4"))]
+        cc_2_channels!(TIM1, u16);
+    }
 
-#[cfg(not(any(feature = "f373", feature = "g0", feature = "g4")))]
-cc_4_channels!(TIM1, u16);
-// todo: PAC error?
-// TIM1 on G4 is nominally 16-bits, but has ~20 bits on ARR, with PAC showing 32 bits?
-#[cfg(any(feature = "g0", feature = "g4"))]
-cc_2_channels!(TIM1, u16);
+}
 
 cfg_if! {
     if #[cfg(not(any(
@@ -2232,10 +2270,12 @@ cfg_if! {
     }
 }
 
-#[cfg(not(feature = "f4"))]
-make_timer!(TIM16, tim16, 2, u16);
-#[cfg(not(feature = "f4"))]
-cc_1_channel!(TIM16, u16);
+cfg_if! {
+    if #[cfg(not(feature = "f4"))] {
+        make_timer!(TIM16, tim16, 2, u16);
+        cc_1_channel!(TIM16, u16);
+    }
+}
 
 cfg_if! {
     if #[cfg(not(any(
@@ -2269,9 +2309,11 @@ cfg_if! {
 }
 
 // todo: G4 (maybe not all variants?) have TIM20.
-#[cfg(any(feature = "f303"))]
-make_timer!(TIM20, tim20, 2, u16);
-#[cfg(any(feature = "f303"))]
-cc_4_channels!(TIM20, u16);
+cfg_if! {
+    if #[cfg(any(feature = "f303"))] {
+        make_timer!(TIM20, tim20, 2, u16);
+        cc_4_channels!(TIM20, u16);
+    }
+}
 
 // todo: Remove the final "true/false" for adv ctrl. You need a sep macro like you do for ccx_channel!.

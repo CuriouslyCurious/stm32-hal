@@ -27,7 +27,7 @@ use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, DmaPeriph, cfg_cha
 use crate::{
     MAX_ITERS,
     clocks::Clocks,
-    pac::{RCC, usart1},
+    pac::{RCC, usart1::RegisterBlock},
     util::{BaudPeriph, RccPeriph},
 };
 
@@ -169,33 +169,44 @@ impl Default for UsartConfig {
 
 // todo: Support fifo_disabled regs.
 
-#[cfg(feature = "h5")]
-macro_rules! cr1 {
-    ($regs:expr) => {
-        $regs.cr1_enabled()
-    };
-}
-
-#[cfg(not(feature = "h5"))]
-macro_rules! cr1 {
-    ($regs:expr) => {
-        $regs.cr1
-    };
+cfg_if! {
+    if #[cfg(feature = "h5")] {
+        macro_rules! cr1 {
+            ($regs:expr) => {
+                $regs.cr1_enabled()
+            };
+        }
+    } else {
+        macro_rules! cr1 {
+            ($regs:expr) => {
+                $regs.cr1
+            };
+        }
+    }
 }
 
 // Some variants like H5 and certain G0 variants use separate registers for FIFO
-#[cfg(feature = "h5")]
-macro_rules! isr {
-    ($regs:expr) => {
-        $regs.isr_enabled()
-    };
-}
+cfg_if! {
+    if #[cfg(feature = "h5")] {
+        macro_rules! isr {
+            ($regs:expr) => {
+                $regs.isr_enabled()
+            };
+        }
 
-#[cfg(not(feature = "h5"))]
-macro_rules! isr {
-    ($regs:expr) => {
-        $regs.isr
-    };
+    } else if #[cfg(feature = "f4")] {
+        macro_rules! isr {
+            ($regs:expr) => {
+                $regs.sr
+            };
+        }
+    } else {
+        macro_rules! isr {
+            ($regs:expr) => {
+                $regs.isr
+            };
+        }
+    }
 }
 
 /// Represents the USART peripheral, for serial communications.
@@ -207,7 +218,7 @@ pub struct Usart<R> {
 
 impl<R> Usart<R>
 where
-    R: Deref<Target = usart1::RegisterBlock> + RccPeriph + BaudPeriph,
+    R: Deref<Target = RegisterBlock> + RccPeriph + BaudPeriph,
 {
     /// Initialize a U(S)ART peripheral, including configuration register writes, and enabling and
     /// resetting its RCC peripheral clock. `baud` is the baud rate, in bytes-per-second.
@@ -314,7 +325,7 @@ where
 
 impl<R> Usart<R>
 where
-    R: Deref<Target = usart1::RegisterBlock> + BaudPeriph,
+    R: Deref<Target = RegisterBlock> + BaudPeriph,
 {
     /// Set the BAUD rate. Called during init, and can be called later to change BAUD
     /// during program execution.
@@ -365,7 +376,7 @@ where
 
 impl<R> Usart<R>
 where
-    R: Deref<Target = usart1::RegisterBlock> + RccPeriph,
+    R: Deref<Target = RegisterBlock> + RccPeriph,
 {
     /// Enable this U(S)ART peripheral.
     pub fn enable(&mut self) {
@@ -387,65 +398,45 @@ where
         // 7. Write the data to send in the USART_TDR register (this clears the TXE bit). Repeat this
         // for each data to be transmitted in case of single buffer.
 
-        cfg_if! {
-            if #[cfg(not(feature = "f4"))] {
-                for word in data {
-                    let mut i = 0;
+        for word in data {
+            let mut i = 0;
 
-                    #[cfg(feature = "h5")]
-                    while isr!(self.regs).read().txfe().bit_is_clear() {
-                        i += 1;
-                        if i >= MAX_ITERS {
-                            // return Err(UartError::Hardware);
-                        }
-                    }
+            #[cfg(feature = "h5")]
+            while isr!(self.regs).read().txfe().bit_is_clear() {
+                i += 1;
+                if i >= MAX_ITERS {
+                    // return Err(UartError::Hardware);
+                }
+            }
 
-                    #[cfg(not(feature = "h5"))]
-                    // Note: Per these PACs, TXFNF and TXE are on the same field, so this is actually
-                    // checking txfnf if the fifo is enabled.
-                    while isr!(self.regs).read().txe().bit_is_clear() {
-                        i += 1;
-                        if i >= MAX_ITERS {
-                            return Err(UartError::Hardware);
-                        }
-                    }
+            #[cfg(not(feature = "h5"))]
+            // Note: Per these PACs, TXFNF and TXE are on the same field, so this is actually
+            // checking txfnf if the fifo is enabled.
+            while isr!(self.regs).read().txe().bit_is_clear() {
+                i += 1;
+                if i >= MAX_ITERS {
+                    return Err(UartError::Hardware);
+                }
+            }
 
-                    self.regs
-                        .tdr
-                        .modify(|_, w| unsafe { w.tdr().bits(*word as u16) });
-                }
-                // 8. After writing the last data into the USART_TDR register, wait until TC=1. This indicates
-                // that the transmission of the last frame is complete. This is required for instance when
-                // the USART is disabled or enters the Halt mode to avoid corrupting the last
-                // transmission
-                let mut i = 0;
-                while isr!(self.regs).read().tc().bit_is_clear() {
-                        i += 1;
-                        if i >= MAX_ITERS {
-                            return Err(UartError::Hardware);
-                        }
-                }
-            } else {
-                for word in data {
-                    let mut i = 0;
-                    while self.regs.sr.read().txe().bit_is_clear() {
-                        i += 1;
-                        if i >= MAX_ITERS {
-                            return Err(UartError::Hardware);
-                        }
-                    }
-                    self.regs
-                        .dr
-                        .modify(|_, w| unsafe { w.dr().bits(*word as u16) });
-
-                }
-                let mut i = 0;
-                while self.regs.sr.read().tc().bit_is_clear() {
-                                            i += 1;
-                        if i >= MAX_ITERS {
-                            return Err(UartError::Hardware);
-                        }
-                }
+            #[cfg(not(feature = "f4"))]
+            self.regs
+                .tdr
+                .modify(|_, w| unsafe { w.tdr().bits(*word as u16) });
+            #[cfg(feature = "f4")]
+            self.regs
+                .dr
+                .modify(|_, w| unsafe { w.dr().bits(*word as u16) });
+        }
+        // 8. After writing the last data into the USART_TDR register, wait until TC=1. This indicates
+        // that the transmission of the last frame is complete. This is required for instance when
+        // the USART is disabled or enters the Halt mode to avoid corrupting the last
+        // transmission
+        let mut i = 0;
+        while isr!(self.regs).read().tc().bit_is_clear() {
+            i += 1;
+            if i >= MAX_ITERS {
+                return Err(UartError::Hardware);
             }
         }
 
@@ -992,7 +983,7 @@ mod embedded_io_impl {
 
     impl<R> Read for Usart<R>
     where
-        R: Deref<Target = usart1::RegisterBlock> + RccPeriph + BaudPeriph,
+        R: Deref<Target = RegisterBlock> + RccPeriph + BaudPeriph,
         Usart<R>: ReadReady,
     {
         fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, Self::Error> {
@@ -1013,7 +1004,7 @@ mod embedded_io_impl {
 
     impl<R> ReadReady for Usart<R>
     where
-        R: Deref<Target = usart1::RegisterBlock> + RccPeriph + BaudPeriph,
+        R: Deref<Target = RegisterBlock> + RccPeriph + BaudPeriph,
     {
         fn read_ready(&mut self) -> Result<bool, Self::Error> {
             self.check_status()?;
@@ -1032,7 +1023,7 @@ mod embedded_io_impl {
 
     impl<R> Write for Usart<R>
     where
-        R: Deref<Target = usart1::RegisterBlock> + RccPeriph + BaudPeriph,
+        R: Deref<Target = RegisterBlock> + RccPeriph + BaudPeriph,
     {
         fn write(&mut self, mut buf: &[u8]) -> Result<usize, Self::Error> {
             // Block until at least one byte can be written:
@@ -1060,7 +1051,7 @@ mod embedded_io_impl {
 
     impl<R> WriteReady for Usart<R>
     where
-        R: Deref<Target = usart1::RegisterBlock> + RccPeriph + BaudPeriph,
+        R: Deref<Target = RegisterBlock> + RccPeriph + BaudPeriph,
     {
         fn write_ready(&mut self) -> Result<bool, Self::Error> {
             cfg_if! {
