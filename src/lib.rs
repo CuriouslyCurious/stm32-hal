@@ -346,7 +346,13 @@ pub use stm32wl::stm32wle5 as pac;
 
 pub mod macros;
 
-#[cfg(not(any(feature = "f301", feature = "f302")))]
+#[cfg(not(any(
+    feature = "f301",
+    feature = "f302",
+    feature = "f373",
+    feature = "f3x4",
+    feature = "f4"
+)))]
 pub mod adc;
 
 // bxCAN families: F3, F4, L4,
@@ -487,11 +493,17 @@ pub mod usart;
 #[cfg(not(any(feature = "f", feature = "l", feature = "g0", feature = "wl")))]
 pub mod lpuart;
 
+// #[cfg(any(
+//     feature = "l4",
+//     // feature = "g4",
+//     feature = "g473", // todo: Not compiling on G431
+//     feature = "h7"
+// ))]
 #[cfg(any(
-    feature = "l4",
-    // feature = "g4",
-    feature = "g473", // todo: Not compiling on G431
-    feature = "h7"
+    feature = "g4",
+    feature = "l4x6",
+    feature = "h747cm4",
+    feature = "h747cm7"
 ))]
 pub mod comp;
 

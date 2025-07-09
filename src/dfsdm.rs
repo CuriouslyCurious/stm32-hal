@@ -3,30 +3,37 @@
 // todo: This module is currently a mess due to needing to support 2 separate register access
 // todo syntaxes re channels and filters, depending on variant.
 
-use core::ops::Deref;
-
 use cfg_if::cfg_if;
 use num_traits::Float; // Float rounding.
 
-use crate::{
-    clocks::Clocks,
-    pac::{self, RCC},
-    util::rcc_en_reset,
-};
+use core::ops::Deref;
+
+use crate::{clocks::Clocks, pac::RCC, util::rcc_en_reset};
 
 cfg_if! {
     if #[cfg(any(feature = "l4", feature = "l5", feature = "h7b3"))] {
-        use crate::pac::dfsdm1 as dfsdm_p;
+        use crate::pac::dfsdm1::RegisterBlock;
     } else {
-        use crate::pac::dfsdm as dfsdm_p;
+        use crate::pac::dfsdm::RegisterBlock;
+    }
+}
+
+cfg_if! {
+    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
+        use crate::pac::{DMA as DMA1};
+    } else if #[cfg(feature = "f3x4")] {
+        use crate::pac::DMA1;
+    } else if #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))] {
+        use crate::pac::{DMA1, DMA2};
     }
 }
 
 #[cfg(any(feature = "f3", feature = "l4"))]
 use crate::dma::DmaInput;
-#[cfg(not(any(feature = "f4", feature = "l552")))]
-use crate::dma::{self, ChannelCfg, DmaChannel};
-use crate::pac::DMA1;
+#[cfg(feature = "l4")]
+use crate::dma::channel_select;
+#[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))]
+use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel};
 
 #[derive(Clone, Copy)]
 pub enum Filter {
@@ -193,8 +200,8 @@ pub struct Dfsdm<R> {
 
 impl<R> Dfsdm<R>
 where
-    R: Deref<Target = dfsdm_p::RegisterBlock>,
-    R: Deref<Target = dfsdm_p::RegisterBlock>,
+    R: Deref<Target = RegisterBlock>,
+    R: Deref<Target = RegisterBlock>,
 {
     /// Initialize a DFSDM peripheral, including  enabling and resetting
     /// its RCC peripheral clock.
@@ -1167,7 +1174,7 @@ where
         filter: Filter,
         dma_channel: DmaChannel,
         channel_cfg: ChannelCfg,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
         // dma: &mut Dma<D>,
     ) {
         // where
@@ -1183,22 +1190,22 @@ where
 
         #[cfg(feature = "l4")]
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
                 match filter {
-                    Filter::F0 => dma::channel_select(&mut regs, DmaInput::Dfsdm1F0),
-                    Filter::F1 => dma::channel_select(&mut regs, DmaInput::Dfsdm1F1),
-                    Filter::F2 => dma::channel_select(&mut regs, DmaInput::Dfsdm1F2),
-                    Filter::F3 => dma::channel_select(&mut regs, DmaInput::Dfsdm1F3),
+                    Filter::F0 => channel_select(&mut regs, DmaInput::Dfsdm1F0),
+                    Filter::F1 => channel_select(&mut regs, DmaInput::Dfsdm1F1),
+                    Filter::F2 => channel_select(&mut regs, DmaInput::Dfsdm1F2),
+                    Filter::F3 => channel_select(&mut regs, DmaInput::Dfsdm1F3),
                 };
             }
-            dma::DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*pac::DMA2::ptr()) };
+            DmaPeriph::Dma2 => {
+                let mut regs = unsafe { &(*DMA2::ptr()) };
                 match filter {
-                    Filter::F0 => dma::channel_select(&mut regs, DmaInput::Dfsdm1F0),
-                    Filter::F1 => dma::channel_select(&mut regs, DmaInput::Dfsdm1F1),
-                    Filter::F2 => dma::channel_select(&mut regs, DmaInput::Dfsdm1F2),
-                    Filter::F3 => dma::channel_select(&mut regs, DmaInput::Dfsdm1F3),
+                    Filter::F0 => channel_select(&mut regs, DmaInput::Dfsdm1F0),
+                    Filter::F1 => channel_select(&mut regs, DmaInput::Dfsdm1F1),
+                    Filter::F2 => channel_select(&mut regs, DmaInput::Dfsdm1F2),
+                    Filter::F3 => channel_select(&mut regs, DmaInput::Dfsdm1F3),
                 };
             }
         }
@@ -1326,31 +1333,31 @@ where
         let len = len as u16;
 
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
                     dma_channel,
                     periph_addr,
                     ptr as u32,
                     len,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S32, // For 24 bits
-                    dma::DataSize::S32,
+                    Direction::ReadFromPeriph,
+                    DataSize::S32, // For 24 bits
+                    DataSize::S32,
                     channel_cfg,
                 );
             }
-            dma::DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                dma::cfg_channel(
+            DmaPeriph::Dma2 => {
+                let mut regs = unsafe { &(*DMA2::ptr()) };
+                cfg_channel(
                     &mut regs,
                     dma_channel,
                     periph_addr,
                     ptr as u32,
                     len,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S32, // For 24 bits
-                    dma::DataSize::S32,
+                    Direction::ReadFromPeriph,
+                    DataSize::S32, // For 24 bits
+                    DataSize::S32,
                     channel_cfg,
                 );
             }
@@ -1455,7 +1462,9 @@ where
     /// Clears the interrupt pending flag for a specific type of interrupt. Note that to clear
     /// EndofInjectedConversion, or EndOfConversion interrupt,s read the FLTxJDATAR or FLTxRDATAR
     /// registers respectively.
+    #[allow(unused_variables)] // temporary
     pub fn clear_interrupt(&mut self, interrupt_type: DfsdmInterrupt, channel: Filter) {
+        todo!()
 
         // todo figure out what's wrong and put back.
         // match channel {

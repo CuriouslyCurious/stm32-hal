@@ -6,10 +6,10 @@ use cortex_m::{Peripherals, asm::wfi};
 
 #[cfg(any(feature = "l4", feature = "l5"))]
 use crate::clocks::{Clocks, MsiRange};
-#[cfg(any(feature = "l4", feature = "l5"))]
-use crate::pac;
 #[cfg(not(feature = "h7"))]
 use crate::pac::PWR;
+#[cfg(any(feature = "l4", feature = "l5"))]
+use crate::pac::RCC;
 
 // See L4 Reference Manual section 5.3.6. The values correspond to the PWR_CR1 LPMS bits.
 // todo PWR_CR1, LPMS field.
@@ -28,7 +28,7 @@ pub enum StopMode {
 /// implementations that rely on system clock or APB speed.
 #[cfg(any(feature = "l4", feature = "l5"))]
 pub fn low_power_run(clocks: &mut Clocks, speed: MsiRange) {
-    let rcc = unsafe { &(*pac::RCC::ptr()) };
+    let _rcc = unsafe { &(*RCC::ptr()) };
     let pwr = unsafe { &(*PWR::ptr()) };
 
     // Decrease the system clock frequency below 2 MHz

@@ -26,9 +26,9 @@ cfg_if! {
 
 #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))]
 use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel};
-#[cfg(any(feature = "l4", feature = "l5", feature = "g4"))]
+#[cfg(any(feature = "l4x6", feature = "l5"))]
 use crate::pac::PWR;
-#[cfg(not(any(feature = "f373", feature = "wl")))]
+#[cfg(not(any(feature = "f373", feature = "wl", feature = "l5")))]
 use crate::pac::SYSCFG;
 use crate::pac::{EXTI, RCC, gpioa};
 #[cfg(not(feature = "h7"))]
@@ -721,7 +721,7 @@ impl Pin {
                 // Setting this bit is mandatory to use PG[15:2]."
                 {
                     unsafe {
-                        (*crate::PWR::ptr()).cr2.modify(|_, w| w.iosv().set_bit());
+                        (*PWR::ptr()).cr2.modify(|_, w| w.iosv().set_bit());
                     }
                 }
             }

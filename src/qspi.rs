@@ -153,8 +153,9 @@ pub struct Qspi {
 }
 
 // todo: Use the deref pattern for OCTOSPI2 support.
+// todo: Move clocks into cfg
 impl Qspi {
-    pub fn new(regs: QUADSPI, cfg: QspiConfig, clocks: &Clocks) -> Self {
+    pub fn new(regs: QUADSPI, cfg: QspiConfig, _clocks: &Clocks) -> Self {
         assert!(
             cfg.dummy_cycles < 32,
             "Dumy cycles must be between 0 and 31."

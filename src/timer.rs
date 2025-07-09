@@ -27,7 +27,8 @@ cfg_if! {
     // } else if #[cfg(feature = "f3x4")] {
         // use crate::pac::DMA1;
         // todo: F-family excluded for now
-    } else if #[cfg(not(any(feature = "f", feature = "l552", feature = "h5")))] {
+        // todo: L-family excluded for now
+    } else if #[cfg(not(any(feature = "f", feature = "l552", feature = "l4", feature = "h5")))] {
         use crate::pac::{DMA1, DMA2};
     }
 }
@@ -49,8 +50,9 @@ cfg_if! {
     }
 }
 
-#[cfg(not(any(feature = "f", feature = "l552")))]
-use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, cfg_channel};
+// Note: DMA burst support is not yet implemented for F3, F4 and L4
+#[cfg(not(any(feature = "f", feature = "l552", feature = "l4")))]
+use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel};
 
 #[cfg(not(any(
     feature = "f4",

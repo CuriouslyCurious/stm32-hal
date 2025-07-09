@@ -29,7 +29,9 @@ use stm32_usbd::UsbPeripheral;
 // use usbd_serial::{self, SerialPort};
 #[cfg(any(feature = "l4", feature = "l5", feature = "g0"))]
 use crate::pac::PWR;
-use crate::{pac, pac::USB, util::rcc_en_reset};
+#[cfg(not(any(feature = "l5", feature = "g0")))]
+use crate::util::rcc_en_reset;
+use crate::{pac, pac::USB};
 
 /// Represents a Universal Serial Bus (USB) peripheral. Functionality is implemented through the
 /// implemented `stm32_usbd::UsbPeripheral` trait.
@@ -131,7 +133,7 @@ pub type UsbBusType = UsbBus<Peripheral>;
 /// already set up.
 pub fn enable_usb_pwr() {
     // Enable VddUSB
-    let pwr = unsafe { &*pac::PWR::ptr() };
+    let pwr = unsafe { &*PWR::ptr() };
     pwr.cr2.modify(|_, w| w.usv().set_bit());
 }
 

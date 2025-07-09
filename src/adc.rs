@@ -5,9 +5,9 @@ use cfg_if::cfg_if;
 cfg_if! {
     if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
         use crate::pac::{DMA as DMA1};
-    } else if #[cfg(feature = "f3x4")] {
+    // } else if #[cfg(feature = "f3x4")] {
         // use crate::pac::DMA1; // oversight?
-    } else if #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5", feature = "f373")))] {
+    } else if #[cfg(not(any(feature = "l552", feature = "h5")))] {
         use crate::pac::{DMA1, DMA2};
     }
 }
@@ -19,15 +19,10 @@ cfg_if! {
 use crate::dma::DmaInput;
 #[cfg(any(feature = "l4"))]
 use crate::dma::channel_select;
-#[cfg(not(any(
-    feature = "f4",
-    feature = "l552",
-    feature = "h5",
-    feature = "f373",
-    feature = "f3x4",
-)))]
+#[cfg(not(any(feature = "h5", feature = "l552")))]
+use crate::dma::{ChannelCfg, Circular, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel};
+#[cfg(any(feature = "l552", feature = "l562"))]
 use crate::{
-    dma::{ChannelCfg, Circular, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel},
     pac::{self, RCC},
     util::rcc_en_reset,
 };
@@ -360,7 +355,6 @@ pub struct Adc<R> {
     pub regs: R,
     // Note: We don't own the common regs; pass them mutably where required, since they may be used
     // by a different ADC.
-    #[cfg(not(any(feature = "f373", feature = "f3x4", feature = "f4")))]
     device: AdcDevice,
     pub cfg: AdcConfig,
     /// This field is managed internally, and is set up on init.
@@ -368,7 +362,6 @@ pub struct Adc<R> {
 }
 
 // todo: Remove this macro, and replace using a `regs` fn like you use in GPIO.
-#[cfg(not(any(feature = "f373", feature = "f3x4", feature = "f4")))]
 macro_rules! hal {
     ($ADC:ident, $ADC_COMMON:ident, $adc:ident, $rcc_num:tt) => {
         impl Adc<pac::$ADC> {
@@ -1221,9 +1214,9 @@ macro_rules! hal {
 cfg_if! {
     if #[cfg(feature = "f3")] {
         // no f373 or f3x4, oversight?
-        #[cfg(any(feature = "f301", feature = "f302", feature = "f303",))]
+        #[cfg(any(feature = "f301", feature = "f302", feature = "f303"))]
         hal!(ADC1, ADC1_2, adc1, 12);
-        #[cfg(any(feature = "f302", feature = "f303",))]
+        #[cfg(any(feature = "f302", feature = "f303"))]
         hal!(ADC2, ADC1_2, adc2, 12);
         #[cfg(any(feature = "f303"))]
         hal!(ADC3, ADC3_4, adc3, 34);
@@ -1240,7 +1233,7 @@ cfg_if! {
         ))]
         hal!(ADC2, ADC_COMMON, adc2, _);
 
-        #[cfg(any(feature = "l4x5", feature = "l4x6",))]
+        #[cfg(any(feature = "l4x5", feature = "l4x6"))]
         hal!(ADC3, ADC_COMMON, adc3, _);
     }
     // todo: ADC 1 vs 2 on L5? L5 supports up to 2 ADCs, so I'm not sure what's going on here.

@@ -1,29 +1,34 @@
 //! Serial audio interface (SAI) support, for digital audio input and output. Used for I2S, PCM/DSP, TDM,
 //! AC'97 etc. See L443 Reference Manual, section 41, or H743 RM, section 51.
 
+use cfg_if::cfg_if;
+
 use core::ops::Deref;
+
+cfg_if! {
+    if #[cfg(feature = "g0")] {
+        use crate::pac::dma::RegisterBlock as DmaRegisterBlock;
+    } else if #[cfg(not(any(feature = "f4", feature = "l552")))] {
+        use crate::pac::dma1::RegisterBlock as DmaRegisterBlock;
+    }
+}
 
 #[cfg(any(feature = "f3", feature = "l4"))]
 use crate::dma::DmaInput;
 #[cfg(not(any(feature = "f4", feature = "l552")))]
 use crate::dma::{self, ChannelCfg, Dma, DmaChannel};
-#[cfg(feature = "g0")]
-use crate::pac::dma as dma_p;
-#[cfg(any(
-    feature = "f3",
-    feature = "l4",
-    feature = "l5",
-    feature = "g4",
-    feature = "h7",
-    feature = "wb"
-))]
-use crate::pac::dma1 as dma_p;
-#[cfg(feature = "g4")]
-use crate::pac::sai;
+
+cfg_if! {
+    if #[cfg(feature = "g4")] {
+        use crate::pac::sai::RegisterBlock as SaiRegisterBlock;
+    } else if #[cfg(feature = "h7")] {
+        use crate::pac::sai4::RegisterBlock as SaiRegisterBlock;
+    } else {
+        use crate::pac::sai1::RegisterBlock as SaiRegisterBlock;
+    }
+}
+
 #[cfg(not(any(feature = "g4", feature = "h7")))]
-use crate::pac::sai1 as sai;
-#[cfg(feature = "h7")]
-use crate::pac::sai4 as sai;
 use crate::{clocks::Clocks, pac::RCC, util::RccPeriph};
 
 #[derive(Clone, Copy)]
@@ -580,11 +585,12 @@ pub struct Sai<R> {
 
 impl<R> Sai<R>
 where
-    R: Deref<Target = sai::RegisterBlock> + RccPeriph,
+    R: Deref<Target = SaiRegisterBlock> + RccPeriph,
 {
     /// Initialize a SAI peripheral, including  enabling and resetting
     /// its RCC peripheral clock.
     pub fn new(regs: R, config_a: SaiConfig, config_b: SaiConfig, _clocks: &Clocks) -> Self {
+        // todo: merge in clock into the configs
         let rcc = unsafe { &(*RCC::ptr()) };
         R::en_reset(rcc);
 
@@ -975,11 +981,11 @@ It can generate an interrupt if WCKCFGIE bit is set in SAI_xIM register");
         &mut self,
         buf: &[i32], // todo size?
         sai_channel: SaiChannel,
-        dma_channel: DmaChannel,
+        _dma_channel: DmaChannel,
         channel_cfg: ChannelCfg,
         dma: &mut Dma<D>,
     ) where
-        D: Deref<Target = dma_p::RegisterBlock>,
+        D: Deref<Target = DmaRegisterBlock>,
     {
         let (ptr, len) = (buf.as_ptr(), buf.len());
 
@@ -987,7 +993,7 @@ It can generate an interrupt if WCKCFGIE bit is set in SAI_xIM register");
 
         // L44 RM, Table 41. "DMA1 requests for each channel"
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let dma_channel = match sai_channel {
+        let _dma_channel = match sai_channel {
             SaiChannel::A => DmaInput::Sai1A.dma1_channel(),
             SaiChannel::B => DmaInput::Sai1B.dma1_channel(),
         };
@@ -1041,7 +1047,7 @@ It can generate an interrupt if WCKCFGIE bit is set in SAI_xIM register");
         };
 
         dma.cfg_channel(
-            dma_channel,
+            _dma_channel,
             periph_addr,
             ptr as u32,
             len,
@@ -1064,11 +1070,11 @@ It can generate an interrupt if WCKCFGIE bit is set in SAI_xIM register");
         &mut self,
         buf: &mut [i32], // todo size?
         sai_channel: SaiChannel,
-        dma_channel: DmaChannel,
+        _dma_channel: DmaChannel,
         channel_cfg: ChannelCfg,
         dma: &mut Dma<D>,
     ) where
-        D: Deref<Target = dma_p::RegisterBlock>,
+        D: Deref<Target = DmaRegisterBlock>,
     {
         let (ptr, len) = (buf.as_mut_ptr(), buf.len());
 
@@ -1078,7 +1084,7 @@ It can generate an interrupt if WCKCFGIE bit is set in SAI_xIM register");
         // todo: DMA2 support.
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let dma_channel = match sai_channel {
+        let _dma_channel = match sai_channel {
             SaiChannel::A => DmaInput::Sai1A.dma1_channel(),
             SaiChannel::B => DmaInput::Sai1B.dma1_channel(),
         };
@@ -1117,7 +1123,7 @@ It can generate an interrupt if WCKCFGIE bit is set in SAI_xIM register");
         };
 
         dma.cfg_channel(
-            dma_channel,
+            _dma_channel,
             periph_addr,
             ptr as u32,
             num_data,

@@ -8,18 +8,35 @@
 //! - Add Configuration Defaults
 //! - Interrupts?
 
-use core::marker::PhantomData;
-
 use cfg_if::cfg_if;
 use paste::paste;
 
-use crate::pac;
-#[cfg(any(feature = "g473"))]
-use crate::pac::comp::{C1CSR, C2CSR, C3CSR, C4CSR, C5CSR, C6CSR, C7CSR};
-#[cfg(any(feature = "l4x6"))]
-use crate::pac::comp::{COMP1_CSR, COMP2_CSR};
-#[cfg(any(feature = "h747cm4", feature = "h747cm7"))]
-use crate::pac::comp1::{CFGR1, CFGR2};
+#[cfg(any(
+    feature = "g4",
+    feature = "l4x6",
+    feature = "h747cm4",
+    feature = "h747cm7"
+))]
+use core::marker::PhantomData;
+
+cfg_if! {
+    if #[cfg(any(feature = "g473"))] {
+        use crate::pac::{
+            comp::{C1CSR, C2CSR, C3CSR, C4CSR, C5CSR, C6CSR, C7CSR},
+            COMP as COMP1,
+        };
+    } else if #[cfg(any(feature = "l4x6"))] {
+        use crate::pac::{
+            comp::{COMP1_CSR, COMP2_CSR},
+            COMP as COMP1,
+        };
+    } else if #[cfg(any(feature = "h747cm4", feature = "h747cm7"))] {
+        use crate::pac::{
+            comp1::{CFGR1, CFGR2},
+            COMP1,
+        };
+    }
+}
 
 // Config enums
 /// Comparator power mode
@@ -55,7 +72,7 @@ pub enum NonInvertingInput {
     Io2 = 0x00000080,
     // PA1/PA3 for STM32L41xxx/42xxx/43xxx/44xxx/45xxx/46xxx
     // TODO: Include stm32l471
-    #[cfg(any(feature = "stm32l4x1", feature = "stm32l4x2", feature = "stm32l4x3",))]
+    #[cfg(any(feature = "l4x1", feature = "l4x2", feature = "l4x3"))]
     /// From the third GPIO pin connected to the comparator.
     ///
     /// The GPIO pin used depends on the MCU and comparator used.
@@ -180,6 +197,12 @@ pub struct CompConfig {
 }
 
 /// Represents an Analog Comparator peripheral.
+#[cfg(any(
+    feature = "g4",
+    feature = "l4x6",
+    feature = "h747cm4",
+    feature = "h747cm7"
+))]
 pub struct Comp<T> {
     phantom: PhantomData<T>,
     /// The lock status of the comparator.
@@ -205,14 +228,7 @@ macro_rules! make_comp {
 
             // Get a reference to the CSR from the COMP RegisterBlock for this comparator
             pub fn csr(&self) -> &$csr_type {
-                #[cfg(any(feature = "g473", feature = "l4"))]
-                unsafe {
-                    &(*pac::COMP::ptr()).$csr_reg
-                }
-                #[cfg(any(feature = "h747cm4", feature = "h747cm7"))]
-                unsafe {
-                    &(*pac::COMP1::ptr()).$csr_reg
-                }
+                unsafe { &(*COMP1::ptr()).$csr_reg }
             }
 
             pub fn enable(&self) {
@@ -268,6 +284,7 @@ macro_rules! make_comp {
                 }
             }
 
+            #[cfg(any(feature = "g473", feature = "h7"))]
             pub fn set_blanking_source(&self, source: u8) {
                 #[cfg(feature = "g473")]
                 self.csr().modify(|_, w| w.blanksel().variant(source));
@@ -306,7 +323,7 @@ macro_rules! make_comp {
                     }
                     else if #[cfg(feature = "h7")] {
                         // On the H7, the comparator output is in a separate status register
-                        let status = unsafe { &(*pac::COMP1::ptr()).sr.read() };
+                        let status = unsafe { &(*COMP1::ptr()).sr.read() };
 
                         // Check which channel this impl is for
                         match "$csr_reg" {

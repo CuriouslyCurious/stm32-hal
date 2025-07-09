@@ -394,6 +394,7 @@ impl Rtc {
         // • Configure the EXTI Line 20 to be sensitive to rising edge
         // • Configure the RTC to generate the RTC alarm
 
+        #[allow(unused_variables)] // todo l5
         let exti = unsafe { &(*EXTI::ptr()) };
 
         cfg_if! {

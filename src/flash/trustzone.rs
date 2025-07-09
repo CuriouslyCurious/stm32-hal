@@ -1,8 +1,6 @@
 // todo: Dual bank support.
 
-use core;
-
-use cfg_if::cfg_if;
+use core::ptr;
 
 use super::{Flash, page_to_address};
 use crate::pac::FLASH;
@@ -336,7 +334,7 @@ impl Flash {
                 // todo: You have 3x DRY here re teh writing. Put that in  a fn?
                 // 4. Perform the data write operation at the desired memory address, inside main memory
                 // block or OTP area. Only double word can be programmed.
-                let mut address = page_to_address(self.dual_bank, bank, page) as *mut u32;
+                let _address = page_to_address(self.dual_bank, bank, page) as *const u32;
 
                 // Map our 8-bit data input API to the 64-bit write API.
                 // "The Flash memory is programmed 72 bits at a time (64 bits + 8 bits ECC)."
@@ -345,7 +343,7 @@ impl Flash {
                     // Pad to 64 bits if required, ie on the last word.
                     let mut padded = [0xff; 8];
 
-                    let (word1, word2) = if chunk.len() < 8 {
+                    let (_word1, _word2) = if chunk.len() < 8 {
                         // 0xff due to the default value of erased pages.
                         padded[0..chunk.len()].clone_from_slice(&chunk);
 
@@ -411,10 +409,10 @@ impl Flash {
 
                     unsafe {
                         // Write a first word in an address aligned with double wor
-                        core::ptr::write_volatile(address, word1);
+                        ptr::write_volatile(address, word1);
                         address = address.add(1);
                         // Write the second word
-                        core::ptr::write_volatile(address, word2);
+                        ptr::write_volatile(address, word2);
                         address = address.add(1);
                     }
 

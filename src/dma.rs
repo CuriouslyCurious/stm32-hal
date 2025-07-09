@@ -27,6 +27,8 @@ cfg_if! {
         use crate::pac::{dma1, DMA1};
     } else {
         use crate::pac::{dma1, DMA1, DMA2};
+        #[cfg(not(feature = "f3"))]
+        use crate::pac::dma2;
     }
 }
 
@@ -922,6 +924,7 @@ where
 /// Configure a DMA channel. See L4 RM 0394, section 11.4.4. Sets the Transfer Complete
 /// interrupt. This is the function called by various module `read_dma` and `write_dma` functions.
 #[cfg(not(feature = "h7"))]
+#[allow(unused_variables)] // remove me once l5 is unexcluded
 pub fn cfg_channel<D>(
     regs: &mut D,
     channel: DmaChannel,
@@ -1119,7 +1122,10 @@ pub fn cfg_channel<D>(
         }
     }
 
-    #[cfg(any(feature = "l5", feature = "wl"))]
+    #[cfg(any(
+        // feature = "l5", // unused due to below flag
+        feature = "wl"
+    ))]
     let num_data = num_data as u32;
 
     #[cfg(not(feature = "l5"))] // todo: PAC ommission? ndt fields missing for diff ndt regs.

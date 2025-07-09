@@ -92,7 +92,7 @@ impl Crc {
         // in the case of a single large slice this improves speed by >3x
         let mut words = data.chunks_exact(4);
         for word in words.by_ref() {
-            let word = u32::from_be_bytes(word.try_into().unwrap());
+            let _word = u32::from_be_bytes(word.try_into().unwrap());
             // todo: Put back once PAC settles. Currently causing error on H7
             // self.regs.dr_mut().write(|w| w.dr().bits(word));
         }
@@ -105,8 +105,8 @@ impl Crc {
             // self.regs.dr16_mut().write(|w| w.dr16().bits(half_word));
         }
 
-        if let Some(byte) = half_word.remainder().first() {
-            // todo: Put back once PAC settles. Currently causing error on H7
+        // todo: Put back once PAC settles. Currently causing error on H7
+        if let Some(_byte) = half_word.remainder().first() {
             // self.regs.dr8_mut().write(|w| w.dr8().bits(*byte));
         }
     }

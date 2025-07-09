@@ -9,13 +9,13 @@ use core::ops::Deref;
 cfg_if! {
     if #[cfg(feature = "g0")] {
         use crate::pac::DMA as DMA1;
-    } else if #[cfg(not(any(feature = "g0", feature = "h5")))] {
+    } else if #[cfg(not(any(feature = "g0", feature = "h5", feature = "l552")))] {
         use crate::pac::DMA1;
     }
 }
 #[cfg(not(any(feature = "l552", feature = "h5")))]
 use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel};
-#[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
+#[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb", feature = "l552")))]
 use crate::pac::DMA2;
 use crate::{
     MAX_ITERS,
