@@ -607,40 +607,52 @@ where
         // F_FS = F_sai_ker_ck / ((FRL + 1) * MCKDIV)
 
         // 6-bit fields.
-        assert!(config_a.mckdiv <= 0b111111);
-        assert!(config_b.mckdiv <= 0b111111);
+        assert!(config_a.mckdiv <= 0b11_1111);
+        assert!(config_b.mckdiv <= 0b11_1111);
 
+        let sai = Self {
+            regs,
+            config_a,
+            config_b,
+        };
+
+        sai.init();
+        sai
+    }
+
+    /// Initializes the SAI peripheral using the given configurations.
+    fn init(&self) {
         // For info on modes, reference H743 RM, section 51.4.3: "Configuring and
         // Enabling SAI modes".
-        regs.cha().cr1.modify(|_, w| unsafe {
-            w.mode().bits(config_a.mode as u8);
-            w.prtcfg().bits(config_a.protocol as u8);
-            w.mono().bit(config_a.mono as u8 != 0);
-            w.syncen().bits(config_a.sync as u8);
-            w.ckstr().bit(config_a.clock_strobe as u8 != 0);
+        self.regs.cha().cr1.modify(|_, w| unsafe {
+            w.mode().bits(self.config_a.mode as u8);
+            w.prtcfg().bits(self.config_a.protocol as u8);
+            w.mono().bit(self.config_a.mono as u8 != 0);
+            w.syncen().bits(self.config_a.sync as u8);
+            w.ckstr().bit(self.config_a.clock_strobe as u8 != 0);
             // The NOMCK bit of the SAI_xCR1 register is used to define whether the master clock is
             // generated or not.
             // Inversed polarity on non-H7 based on how we have `MasterClock` enabled.
             #[cfg(not(any(feature = "h7", feature = "l4", feature = "l5")))]
-            w.mcken().bit(config_a.master_clock as u8 == 0);
+            w.mcken().bit(self.config_a.master_clock as u8 == 0);
             #[cfg(feature = "h7")]
             // Due to an H743v PAC error, xCR bit 19 is called NODIV (Which is how it is on other platforms).
             // This is actually the NOMCK bit.
             // todo: NODIV may need to be set by the user and presets - not hard-set like this!
-            w.nodiv().bit(config_a.master_clock as u8 != 0);
+            w.nodiv().bit(self.config_a.master_clock as u8 != 0);
             // The audio frame can target different data sizes by configuring bit DS[2:0] in the SAI_xCR1
             // register. The data sizes may be 8, 10, 16, 20, 24 or 32 bits. During the transfer, either the
             // MSB or the LSB of the data are sent first, depending on the configuration of bit LSBFIRST in
             // the SAI_xCR1 register.
-            w.ds().bits(config_a.datasize as u8);
+            w.ds().bits(self.config_a.datasize as u8);
             #[cfg(not(feature = "l4"))]
-            w.osr().bit(config_a.oversampling_ratio as u8 != 0);
+            w.osr().bit(self.config_a.oversampling_ratio as u8 != 0);
             // This bit is set and cleared by software. It must be configured when the audio block is disabled. This
             // bit has no meaning in AC’97 audio protocol since AC’97 data are always transferred with the MSB
             // first. This bit has no meaning in SPDIF audio protocol since in SPDIF data are always transferred
             // with LSB first
-            w.lsbfirst().bit(config_a.first_bit as u8 != 0);
-            w.mckdiv().bits(config_a.mckdiv)
+            w.lsbfirst().bit(self.config_a.first_bit as u8 != 0);
+            w.mckdiv().bits(self.config_a.mckdiv)
         });
         // todo: MCKEN vice NOMCK?? Make sure your enum reflects how you handle it.
 
@@ -667,30 +679,30 @@ where
 
         // We use config A's settings here, and ignore config B. These must be set with SAI disabled.
         #[cfg(not(any(feature = "l4", feature = "wb", feature = "g4")))]
-        regs.gcr.modify(|_, w| unsafe {
-            w.syncout().bits(config_a.sync_out as u8);
-            w.syncin().bits(config_a.sync_in as u8)
+        self.regs.gcr.modify(|_, w| unsafe {
+            w.syncout().bits(self.config_a.sync_out as u8);
+            w.syncin().bits(self.config_a.sync_in as u8)
         });
 
-        regs.chb().cr1.modify(|_, w| unsafe {
-            w.mode().bits(config_b.mode as u8);
-            w.prtcfg().bits(config_b.protocol as u8);
-            w.mono().bit(config_b.mono as u8 != 0);
-            w.syncen().bits(config_b.sync as u8);
-            w.ckstr().bit(config_b.clock_strobe as u8 != 0);
+        self.regs.chb().cr1.modify(|_, w| unsafe {
+            w.mode().bits(self.config_b.mode as u8);
+            w.prtcfg().bits(self.config_b.protocol as u8);
+            w.mono().bit(self.config_b.mono as u8 != 0);
+            w.syncen().bits(self.config_b.sync as u8);
+            w.ckstr().bit(self.config_b.clock_strobe as u8 != 0);
             #[cfg(not(any(feature = "h7", feature = "l4", feature = "l5")))]
-            w.mcken().bit(config_b.master_clock as u8 == 0);
+            w.mcken().bit(self.config_b.master_clock as u8 == 0);
             #[cfg(feature = "h7")]
-            w.nodiv().bit(config_b.master_clock as u8 != 0);
-            w.ds().bits(config_b.datasize as u8);
+            w.nodiv().bit(self.config_b.master_clock as u8 != 0);
+            w.ds().bits(self.config_b.datasize as u8);
             #[cfg(not(feature = "l4"))]
-            w.osr().bit(config_b.oversampling_ratio as u8 != 0);
-            w.lsbfirst().bit(config_b.first_bit as u8 != 0);
-            w.mckdiv().bits(config_a.mckdiv)
+            w.osr().bit(self.config_b.oversampling_ratio as u8 != 0);
+            w.lsbfirst().bit(self.config_b.first_bit as u8 != 0);
+            w.mckdiv().bits(self.config_a.mckdiv)
         });
 
         // todo: Add this to config and don't hard-set.
-        regs.cha().cr2.modify(|_, w| unsafe {
+        self.regs.cha().cr2.modify(|_, w| unsafe {
             w.comp().bits(0);
             w.cpl().clear_bit();
             #[cfg(feature = "wb")]
@@ -704,10 +716,10 @@ where
             // will be lost automatically.
             w.fflush().set_bit();
             // FIFO threshold
-            w.fth().bits(config_a.fifo_thresh as u8)
+            w.fth().bits(self.config_a.fifo_thresh as u8)
         });
 
-        regs.chb().cr2.modify(|_, w| unsafe {
+        self.regs.chb().cr2.modify(|_, w| unsafe {
             w.comp().bits(0);
             w.cpl().clear_bit();
             #[cfg(feature = "wb")]
@@ -717,7 +729,7 @@ where
             w.mute().clear_bit(); // xmitter only
             w.tris().clear_bit(); // xmitter only
             w.fflush().set_bit();
-            w.fth().bits(config_b.fifo_thresh as u8)
+            w.fth().bits(self.config_b.fifo_thresh as u8)
         });
 
         // The FS signal can have a different meaning depending on the FS function. FSDEF bit in the
@@ -733,72 +745,72 @@ where
         // Otherwise if TRIS = 1, the SD line is released to HI-Z. In reception mode, the remaining bit
         // clock cycles are not considered until the channel side changes.
 
-        if config_a.frame_length < 8
-            || config_b.frame_length < 8
-            || config_a.frame_length > 256
-            || config_b.frame_length > 256
+        if self.config_a.frame_length < 8
+            || self.config_b.frame_length < 8
+            || self.config_a.frame_length > 256
+            || self.config_b.frame_length > 256
         {
             panic!("Frame length must be bewteen 8 and 256")
         }
 
-        let fsall_bits_a = if let FsSignal::Frame = config_a.fs_signal {
+        let fsall_bits_a = if let FsSignal::Frame = self.config_a.fs_signal {
             0
         } else {
             // Hard-set a 50% duty cycle. Don't think this is a safe assumption? Send in an issue
             // or PR.
-            (config_a.frame_length / 2) as u8 - 1
+            (self.config_a.frame_length / 2) as u8 - 1
         };
 
-        let fsall_bits_b = if let FsSignal::Frame = config_a.fs_signal {
+        let fsall_bits_b = if let FsSignal::Frame = self.config_a.fs_signal {
             0
         } else {
             // Hard-set a 50% duty cycle. Don't think this is a safe assumption? Send in an issue
             // or PR.
-            (config_a.frame_length / 2) as u8 - 1
+            (self.config_a.frame_length / 2) as u8 - 1
         };
 
         // The audio frame length can be configured to up to 256 bit clock cycles, by setting
         // FRL[7:0] field in the SAI_xFRCR register.
-        regs.cha().frcr.modify(|_, w| unsafe {
-            w.fsoff().bit(config_a.fs_offset as u8 != 0);
-            w.fspol().bit(config_a.fs_polarity as u8 != 0);
-            w.fsdef().bit(config_a.fs_signal as u8 != 0);
+        self.regs.cha().frcr.modify(|_, w| unsafe {
+            w.fsoff().bit(self.config_a.fs_offset as u8 != 0);
+            w.fspol().bit(self.config_a.fs_polarity as u8 != 0);
+            w.fsdef().bit(self.config_a.fs_signal as u8 != 0);
             w.fsall().bits(fsall_bits_a);
-            w.frl().bits((config_a.frame_length - 1) as u8)
+            w.frl().bits((self.config_a.frame_length - 1) as u8)
         });
 
-        regs.chb().frcr.modify(|_, w| unsafe {
-            w.fsoff().bit(config_a.fs_offset as u8 != 0);
-            w.fspol().bit(config_b.fs_polarity as u8 != 0);
-            w.fsdef().bit(config_b.fs_signal as u8 != 0);
+        self.regs.chb().frcr.modify(|_, w| unsafe {
+            w.fsoff().bit(self.config_a.fs_offset as u8 != 0);
+            w.fspol().bit(self.config_b.fs_polarity as u8 != 0);
+            w.fsdef().bit(self.config_b.fs_signal as u8 != 0);
             w.fsall().bits(fsall_bits_b);
-            w.frl().bits((config_b.frame_length - 1) as u8)
+            w.frl().bits((self.config_b.frame_length - 1) as u8)
         });
 
-        assert!(config_a.first_bit_offset <= 0b11111);
-        assert!(config_b.first_bit_offset <= 0b11111);
+        assert!(self.config_a.first_bit_offset <= 0b11111);
+        assert!(self.config_b.first_bit_offset <= 0b11111);
 
         // Each SLOTEN bit corresponds to a slot position from 0 to 15 (maximum 16 slots).
         // So, to enable the first 2 slots, we set 0b11. The code below calculates this.
-        let slot_en_bits = 2_u16.pow(config_a.num_slots as u32) - 1;
+        let slot_en_bits = 2_u16.pow(self.config_a.num_slots as u32) - 1;
 
-        regs.cha().slotr.modify(|_, w| unsafe {
+        self.regs.cha().slotr.modify(|_, w| unsafe {
             w.sloten().bits(slot_en_bits);
             // The slot is the basic element in the audio frame. The number of slots in the audio frame is
             // equal to NBSLOT[3:0] + 1.
-            w.nbslot().bits(config_a.num_slots - 1);
+            w.nbslot().bits(self.config_a.num_slots - 1);
             // The slot size must be higher or equal to the data size. If this condition is not respected, the behavior
             // of the SAI will be undetermined.
-            w.slotsz().bits(config_a.slotsize as u8);
-            w.fboff().bits(config_a.first_bit_offset)
+            w.slotsz().bits(self.config_a.slotsize as u8);
+            w.fboff().bits(self.config_a.first_bit_offset)
         });
 
-        let slot_en_bits = 2_u16.pow(config_b.num_slots as u32) - 1;
-        regs.chb().slotr.modify(|_, w| unsafe {
+        let slot_en_bits = 2_u16.pow(self.config_b.num_slots as u32) - 1;
+        self.regs.chb().slotr.modify(|_, w| unsafe {
             w.sloten().bits(slot_en_bits);
-            w.nbslot().bits(config_b.num_slots - 1);
-            w.slotsz().bits(config_b.slotsize as u8);
-            w.fboff().bits(config_b.first_bit_offset)
+            w.nbslot().bits(self.config_b.num_slots - 1);
+            w.slotsz().bits(self.config_b.slotsize as u8);
+            w.fboff().bits(self.config_b.first_bit_offset)
         });
 
         // The PDM function is intended to be used in conjunction with SAI_A subblock configured in
@@ -815,20 +827,20 @@ where
         // (Above. Although we don't check this)
         // 2. Configure the PDM interface as follows:
         #[cfg(not(feature = "l4"))]
-        if config_a.pdm_mode {
-            assert!(config_a.pdm_clock_used <= 4 && config_a.pdm_clock_used >= 1);
+        if self.config_a.pdm_mode {
+            assert!(self.config_a.pdm_clock_used <= 4 && self.config_a.pdm_clock_used >= 1);
 
-            regs.pdmcr.modify(|_, w| unsafe {
+            self.regs.pdmcr.modify(|_, w| unsafe {
                 // a) Define the number of digital microphones via MICNBR.
-                w.micnbr().bits(config_a.num_pdm_mics as u8);
+                w.micnbr().bits(self.config_a.num_pdm_mics as u8);
                 // b) Enable the bitstream clock needed in the application by setting the corresponding
                 // bits on CKEN to 1.
-                w.cken1().bit(config_a.pdm_clock_used == 1);
-                w.cken2().bit(config_a.pdm_clock_used == 2);
+                w.cken1().bit(self.config_a.pdm_clock_used == 1);
+                w.cken2().bit(self.config_a.pdm_clock_used == 2);
                 #[cfg(not(feature = "l5"))]
-                w.cken3().bit(config_a.pdm_clock_used == 3);
+                w.cken3().bit(self.config_a.pdm_clock_used == 3);
                 #[cfg(not(feature = "l5"))]
-                w.cken4().bit(config_a.pdm_clock_used == 4);
+                w.cken4().bit(self.config_a.pdm_clock_used == 4);
                 // 3. Enable the PDM interface, via PDMEN bit.
                 w.pdmen().set_bit()
             })
@@ -841,12 +853,6 @@ where
 
         // Note that most register fields set in this initialization function must be done with
         // SAIEN disabled.
-
-        Self {
-            regs,
-            config_a,
-            config_b,
-        }
     }
 
     /// Enable an audio subblock (channel).
