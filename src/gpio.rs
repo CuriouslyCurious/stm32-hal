@@ -1317,7 +1317,7 @@ const fn regs(port: Port) -> *const gpioa::RegisterBlock {
 pub fn write_dma(
     buf: &[u32],
     port: Port,
-    _channel: DmaChannel,
+    channel: DmaChannel,
     channel_cfg: ChannelCfg,
     dma_periph: DmaPeriph,
 ) {
@@ -1335,7 +1335,7 @@ pub fn write_dma(
             let mut regs = unsafe { &(*DMA1::ptr()) };
             cfg_channel(
                 &mut regs,
-                _channel,
+                channel,
                 periph_addr,
                 ptr as u32,
                 num_data,
@@ -1350,7 +1350,7 @@ pub fn write_dma(
             let mut regs = unsafe { &(*DMA2::ptr()) };
             cfg_channel(
                 &mut regs,
-                _channel,
+                channel,
                 periph_addr,
                 ptr as u32,
                 num_data,
@@ -1368,7 +1368,7 @@ pub fn write_dma(
 pub fn read_dma(
     buf: &[u32],
     port: Port,
-    _channel: DmaChannel,
+    channel: DmaChannel,
     channel_cfg: ChannelCfg,
     dma_periph: DmaPeriph,
 ) {
@@ -1386,7 +1386,7 @@ pub fn read_dma(
             let mut regs = unsafe { &(*DMA1::ptr()) };
             cfg_channel(
                 &mut regs,
-                _channel,
+                channel,
                 periph_addr,
                 ptr as u32,
                 num_data,
@@ -1401,7 +1401,7 @@ pub fn read_dma(
             let mut regs = unsafe { &(*DMA2::ptr()) };
             cfg_channel(
                 &mut regs,
-                _channel,
+                channel,
                 periph_addr,
                 ptr as u32,
                 num_data,

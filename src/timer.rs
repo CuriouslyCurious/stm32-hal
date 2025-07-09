@@ -677,7 +677,7 @@ macro_rules! make_timer {
              /// intervals." This may be used to create arbitrary waveforms by modifying the CCR register
              /// (base address = 13-16, for CCR1-4), or for implementing duty-cycle based digital protocols.
             #[cfg(not(any(feature = "g0", feature = "f", feature = "l552", feature = "l4")))]
-            pub unsafe fn write_dma_burst(
+            pub fn write_dma_burst(
                 &mut self,
                 buf: &[u16],
                 base_address: u8,
@@ -719,7 +719,7 @@ macro_rules! make_timer {
 
                 // 1. Configure the corresponding DMA channel as follows:
                 // –DMA channel peripheral address is the DMAR register address
-                let periph_addr = &self.regs.dmar as *const _ as u32;
+                let periph_addr = unsafe { &self.regs.dmar as *const _ as u32 };
                 // –DMA channel memory address is the address of the buffer in the RAM containing
                 // the data to be transferred by DMA into CCRx registers.
 
@@ -744,7 +744,7 @@ macro_rules! make_timer {
                 // 00000: TIMx_CR1
                 // 00001: TIMx_CR2
                 // 00010: TIMx_SMCR
-                self.regs.dcr.modify(|_, w| {
+                self.regs.dcr.write(|w| unsafe {
                     w.dba().bits(base_address);
                     w.dbl().bits(burst_len as u8 - 1)
                 });
@@ -796,7 +796,7 @@ macro_rules! make_timer {
             }
 
             #[cfg(not(any(feature = "g0", feature = "f", feature = "l552", feature = "l4")))]
-            pub unsafe fn read_dma_burst(
+            pub fn read_dma_burst(
                 // todo: Experimenting with input capture.
                 &mut self,
                 buf: &mut [u16],
@@ -809,14 +809,14 @@ macro_rules! make_timer {
             ) {
                 let (ptr, len) = (buf.as_mut_ptr(), buf.len());
 
-                let periph_addr = &self.regs.dmar as *const _ as u32;
+                let periph_addr = unsafe { &self.regs.dmar as *const _ as u32 };
 
                 #[cfg(feature = "h7")]
                 let num_data = len as u32;
                 #[cfg(not(feature = "h7"))]
                 let num_data = len as u16;
 
-                self.regs.dcr.modify(|_, w| {
+                self.regs.dcr.write(|w| unsafe {
                     w.dba().bits(base_address);
                     w.dbl().bits(burst_len as u8 - 1)
                 });

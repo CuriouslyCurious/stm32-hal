@@ -6,25 +6,31 @@ use cfg_if::cfg_if;
 use core::ops::Deref;
 
 cfg_if! {
-    if #[cfg(feature = "g0")] {
-        use crate::pac::dma::RegisterBlock as DmaRegisterBlock;
-    } else if #[cfg(not(any(feature = "f4", feature = "l552")))] {
-        use crate::pac::dma1::RegisterBlock as DmaRegisterBlock;
+    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
+        use crate::pac::{DMA as DMA1};
+    } else if #[cfg(feature = "f3x4")] {
+        use crate::pac::DMA1;
+    } else if #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))] {
+        use crate::pac::{DMA1, DMA2};
     }
 }
 
 #[cfg(any(feature = "f3", feature = "l4"))]
 use crate::dma::DmaInput;
+#[cfg(feature = "l4")]
+use crate::dma::channel_select;
 #[cfg(not(any(feature = "f4", feature = "l552")))]
-use crate::dma::{self, ChannelCfg, Dma, DmaChannel};
+use crate::dma::{
+    ChannelCfg, DataSize as DmaDataSize, Direction, DmaChannel, DmaPeriph, cfg_channel,
+};
 
 cfg_if! {
     if #[cfg(feature = "g4")] {
-        use crate::pac::sai::RegisterBlock as SaiRegisterBlock;
+        use crate::pac::sai::RegisterBlock;
     } else if #[cfg(feature = "h7")] {
-        use crate::pac::sai4::RegisterBlock as SaiRegisterBlock;
+        use crate::pac::sai4::RegisterBlock;
     } else {
-        use crate::pac::sai1::RegisterBlock as SaiRegisterBlock;
+        use crate::pac::sai1::RegisterBlock;
     }
 }
 
@@ -585,7 +591,7 @@ pub struct Sai<R> {
 
 impl<R> Sai<R>
 where
-    R: Deref<Target = SaiRegisterBlock> + RccPeriph,
+    R: Deref<Target = RegisterBlock> + RccPeriph,
 {
     /// Initialize a SAI peripheral, including  enabling and resetting
     /// its RCC peripheral clock.
@@ -983,31 +989,34 @@ It can generate an interrupt if WCKCFGIE bit is set in SAI_xIM register");
     /// protocol.
     /// Before configuring the SAI block, the SAI DMA channel must be disabled.
     #[cfg(not(any(feature = "f4", feature = "l552")))]
-    pub unsafe fn write_dma<D>(
+    #[allow(unused_variables)]
+    pub fn write_dma(
         &mut self,
         buf: &[i32], // todo size?
         sai_channel: SaiChannel,
-        _dma_channel: DmaChannel,
+        dma_channel: DmaChannel,
         channel_cfg: ChannelCfg,
-        dma: &mut Dma<D>,
-    ) where
-        D: Deref<Target = DmaRegisterBlock>,
-    {
+        dma_periph: DmaPeriph,
+    ) {
         let (ptr, len) = (buf.as_ptr(), buf.len());
 
-        // todo: DMA2 support.
+        #[cfg(any(feature = "f3", feature = "l4"))]
+        let channel = R::read_chan();
+
+        let mut regs = unsafe { &(*DMA1::ptr()) };
+        // todo: DMA2
 
         // L44 RM, Table 41. "DMA1 requests for each channel"
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let _dma_channel = match sai_channel {
+        let dma_channel = match sai_channel {
             SaiChannel::A => DmaInput::Sai1A.dma1_channel(),
             SaiChannel::B => DmaInput::Sai1B.dma1_channel(),
         };
 
         #[cfg(feature = "l4")]
         match sai_channel {
-            SaiChannel::A => dma.channel_select(DmaInput::Sai1A),
-            SaiChannel::B => dma.channel_select(DmaInput::Sai1B),
+            SaiChannel::A => channel_select(&mut regs, DmaInput::Sai1A),
+            SaiChannel::B => channel_select(&mut regs, DmaInput::Sai1B),
         };
 
         // To configure the audio subblock for DMA transfer, set DMAEN bit in the SAI_xCR1 register.
@@ -1031,84 +1040,8 @@ It can generate an interrupt if WCKCFGIE bit is set in SAI_xIM register");
         // 3. Enable the DMA. (handled by `dma.cfg_channel`)
 
         let periph_addr = match sai_channel {
-            SaiChannel::A => &self.regs.cha().dr as *const _ as u32,
-            SaiChannel::B => &self.regs.chb().dr as *const _ as u32,
-        };
-
-        #[cfg(feature = "h7")]
-        let len = len as u32;
-        #[cfg(not(feature = "h7"))]
-        let len = len as u16;
-
-        let cfg_datasize = match sai_channel {
-            SaiChannel::A => self.config_a.datasize,
-            SaiChannel::B => self.config_b.datasize,
-        };
-
-        let datasize = match cfg_datasize {
-            DataSize::S8 => dma::DataSize::S8,
-            DataSize::S10 => dma::DataSize::S16,
-            DataSize::S16 => dma::DataSize::S16,
-            _ => dma::DataSize::S32,
-        };
-
-        dma.cfg_channel(
-            _dma_channel,
-            periph_addr,
-            ptr as u32,
-            len,
-            dma::Direction::ReadFromMem,
-            datasize,
-            datasize,
-            channel_cfg,
-        );
-
-        // 4. Enable the SAI interface. (handled by `Sai::enable() in user code`.)
-    }
-
-    /// Read data from SAI with DMA. H743 RM, section 51.4.16: SAI DMA Interface.
-    /// To free the CPU and to optimize bus bandwidth, each SAI audio block has an independent
-    /// DMA interface to read/write from/to the SAI_xDR register (to access the internal FIFO).
-    /// There is one DMA channel per audio subblock supporting basic DMA request/acknowledge
-    /// protocol.
-    #[cfg(not(any(feature = "f4", feature = "l552")))]
-    pub unsafe fn read_dma<D>(
-        &mut self,
-        buf: &mut [i32], // todo size?
-        sai_channel: SaiChannel,
-        _dma_channel: DmaChannel,
-        channel_cfg: ChannelCfg,
-        dma: &mut Dma<D>,
-    ) where
-        D: Deref<Target = DmaRegisterBlock>,
-    {
-        let (ptr, len) = (buf.as_mut_ptr(), buf.len());
-
-        // See commends on `write_dma`.
-
-        // L44 RM, Table 41. "DMA1 requests for each channel
-        // todo: DMA2 support.
-
-        #[cfg(any(feature = "f3", feature = "l4"))]
-        let _dma_channel = match sai_channel {
-            SaiChannel::A => DmaInput::Sai1A.dma1_channel(),
-            SaiChannel::B => DmaInput::Sai1B.dma1_channel(),
-        };
-
-        #[cfg(feature = "l4")]
-        match sai_channel {
-            SaiChannel::A => dma.channel_select(DmaInput::Sai1A),
-            SaiChannel::B => dma.channel_select(DmaInput::Sai1B),
-        };
-
-        match sai_channel {
-            SaiChannel::A => self.regs.cha().cr1.modify(|_, w| w.dmaen().set_bit()),
-            SaiChannel::B => self.regs.chb().cr1.modify(|_, w| w.dmaen().set_bit()),
-        }
-
-        let periph_addr = match sai_channel {
-            SaiChannel::A => &self.regs.cha().dr as *const _ as u32,
-            SaiChannel::B => &self.regs.chb().dr as *const _ as u32,
+            SaiChannel::A => unsafe { &self.regs.cha().dr as *const _ as u32 },
+            SaiChannel::B => unsafe { &self.regs.chb().dr as *const _ as u32 },
         };
 
         #[cfg(feature = "h7")]
@@ -1122,23 +1055,154 @@ It can generate an interrupt if WCKCFGIE bit is set in SAI_xIM register");
         };
 
         let datasize = match cfg_datasize {
-            DataSize::S8 => dma::DataSize::S8,
-            DataSize::S10 => dma::DataSize::S16,
-            DataSize::S16 => dma::DataSize::S16,
-            _ => dma::DataSize::S32,
+            DataSize::S8 => DmaDataSize::S8,
+            DataSize::S10 => DmaDataSize::S16,
+            DataSize::S16 => DmaDataSize::S16,
+            _ => DmaDataSize::S32,
         };
 
-        dma.cfg_channel(
-            _dma_channel,
-            periph_addr,
-            ptr as u32,
-            num_data,
-            dma::Direction::ReadFromPeriph,
-            datasize,
-            datasize,
-            channel_cfg,
-        );
+        match dma_periph {
+            DmaPeriph::Dma1 => {
+                let mut regs = unsafe { &(*DMA1::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
 
+                cfg_channel(
+                    &mut regs,
+                    dma_channel,
+                    periph_addr,
+                    ptr as u32,
+                    num_data,
+                    Direction::ReadFromPeriph,
+                    datasize,
+                    datasize,
+                    channel_cfg,
+                );
+            }
+            DmaPeriph::Dma2 => {
+                let mut regs = unsafe { &(*DMA2::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
+                cfg_channel(
+                    &mut regs,
+                    dma_channel,
+                    periph_addr,
+                    ptr as u32,
+                    num_data,
+                    Direction::ReadFromPeriph,
+                    datasize,
+                    datasize,
+                    channel_cfg,
+                );
+            }
+        }
+        // 4. Enable the SAI interface. (handled by `Sai::enable() in user code`.)
+    }
+
+    /// Read data from SAI with DMA. H743 RM, section 51.4.16: SAI DMA Interface.
+    /// To free the CPU and to optimize bus bandwidth, each SAI audio block has an independent
+    /// DMA interface to read/write from/to the SAI_xDR register (to access the internal FIFO).
+    /// There is one DMA channel per audio subblock supporting basic DMA request/acknowledge
+    /// protocol.
+    #[cfg(not(any(feature = "f4", feature = "l552")))]
+    #[allow(unused_variables)]
+    pub fn read_dma(
+        &mut self,
+        buf: &mut [i32], // todo size?
+        sai_channel: SaiChannel,
+        dma_channel: DmaChannel,
+        channel_cfg: ChannelCfg,
+        dma_periph: DmaPeriph,
+    ) {
+        let (ptr, len) = (buf.as_mut_ptr(), buf.len());
+
+        // See comments on `write_dma`.
+        #[cfg(any(feature = "f3", feature = "l4"))]
+        let channel = R::read_chan();
+
+        // L44 RM, Table 41. "DMA1 requests for each channel
+
+        let mut regs = unsafe { &(*DMA1::ptr()) };
+        // todo: DMA2
+
+        #[cfg(any(feature = "f3", feature = "l4"))]
+        let dma_channel = match sai_channel {
+            SaiChannel::A => DmaInput::Sai1A.dma1_channel(),
+            SaiChannel::B => DmaInput::Sai1B.dma1_channel(),
+        };
+
+        #[cfg(feature = "l4")]
+        match sai_channel {
+            SaiChannel::A => channel_select(&mut regs, DmaInput::Sai1A),
+            SaiChannel::B => channel_select(&mut regs, DmaInput::Sai1B),
+        };
+
+        match sai_channel {
+            SaiChannel::A => self.regs.cha().cr1.modify(|_, w| w.dmaen().set_bit()),
+            SaiChannel::B => self.regs.chb().cr1.modify(|_, w| w.dmaen().set_bit()),
+        }
+
+        let periph_addr = unsafe {
+            match sai_channel {
+                SaiChannel::A => &self.regs.cha().dr as *const _ as u32,
+                SaiChannel::B => &self.regs.chb().dr as *const _ as u32,
+            }
+        };
+
+        #[cfg(feature = "h7")]
+        let num_data = len as u32;
+        #[cfg(not(feature = "h7"))]
+        let num_data = len as u16;
+
+        let cfg_datasize = match sai_channel {
+            SaiChannel::A => self.config_a.datasize,
+            SaiChannel::B => self.config_b.datasize,
+        };
+
+        let datasize = match cfg_datasize {
+            DataSize::S8 => DmaDataSize::S8,
+            DataSize::S10 => DmaDataSize::S16,
+            DataSize::S16 => DmaDataSize::S16,
+            _ => DmaDataSize::S32,
+        };
+
+        match dma_periph {
+            DmaPeriph::Dma1 => {
+                let mut regs = unsafe { &(*DMA1::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
+                cfg_channel(
+                    &mut regs,
+                    dma_channel,
+                    periph_addr,
+                    ptr as u32,
+                    num_data,
+                    Direction::ReadFromPeriph,
+                    datasize,
+                    datasize,
+                    channel_cfg,
+                );
+            }
+            DmaPeriph::Dma2 => {
+                let mut regs = unsafe { &(*DMA2::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
+                cfg_channel(
+                    &mut regs,
+                    dma_channel,
+                    periph_addr,
+                    ptr as u32,
+                    num_data,
+                    Direction::ReadFromPeriph,
+                    datasize,
+                    datasize,
+                    channel_cfg,
+                );
+            }
+        }
         // 4. Enable the SAI interface. (handled by `Sai::enable() in user code`.)
     }
 

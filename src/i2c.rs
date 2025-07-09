@@ -568,23 +568,20 @@ where
     /// For a single write, set `autoend` to `true`. For a write_read and other use cases,
     /// set it to `false`.
     #[cfg(not(any(feature = "l552", feature = "h5")))]
-    pub unsafe fn write_dma(
+    #[allow(unused_variables)]
+    pub fn write_dma(
         &mut self,
         addr: u8,
         buf: &[u8],
         autoend: bool,
-        _channel: DmaChannel,
+        channel: DmaChannel,
         channel_cfg: ChannelCfg,
         dma_periph: DmaPeriph,
     ) {
         let (ptr, len) = (buf.as_ptr(), buf.len());
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let _channel = R::write_chan();
-        #[cfg(feature = "l4")]
-        let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
-        #[cfg(feature = "l4")]
-        R::write_sel(&mut dma_regs);
+        let channel = R::write_chan();
 
         // DMA (Direct Memory Access) can be enabled for transmission by setting the TXDMAEN bit
         // in the I2C_CR1 register. Data is loaded from an SRAM area configured using the DMA
@@ -614,6 +611,8 @@ where
         // page 1169.
         // Note: If DMA is used for transmission, the TXIE bit does not need to be enabled
 
+        let periph_addr = unsafe { &self.regs.txdr as *const _ as u32 };
+
         #[cfg(feature = "h7")]
         let num_data = len as u32;
         #[cfg(not(feature = "h7"))]
@@ -622,10 +621,13 @@ where
         match dma_periph {
             DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
                 cfg_channel(
                     &mut regs,
-                    _channel,
-                    &self.regs.txdr as *const _ as u32,
+                    channel,
+                    periph_addr,
                     ptr as u32,
                     num_data,
                     Direction::ReadFromMem,
@@ -637,10 +639,13 @@ where
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
             DmaPeriph::Dma2 => {
                 let mut regs = unsafe { &(*DMA2::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
                 cfg_channel(
                     &mut regs,
-                    _channel,
-                    &self.regs.txdr as *const _ as u32,
+                    channel,
+                    periph_addr,
                     ptr as u32,
                     num_data,
                     Direction::ReadFromMem,
@@ -656,22 +661,19 @@ where
     /// Note that the `channel` argument is unused on F3 and L4, since it is hard-coded,
     /// and can't be configured using the DMAMUX peripheral. (`dma::mux()` fn).
     #[cfg(not(any(feature = "l552", feature = "h5")))]
-    pub unsafe fn read_dma(
+    #[allow(unused_variables)]
+    pub fn read_dma(
         &mut self,
         addr: u8,
         buf: &mut [u8],
-        _channel: DmaChannel,
+        channel: DmaChannel,
         channel_cfg: ChannelCfg,
         dma_periph: DmaPeriph,
     ) {
         let (ptr, len) = (buf.as_mut_ptr(), buf.len());
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let _channel = R::read_chan();
-        #[cfg(feature = "l4")]
-        let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
-        #[cfg(feature = "l4")]
-        R::write_sel(&mut dma_regs);
+        let channel = R::read_chan();
 
         // DMA (Direct Memory Access) can be enabled for reception by setting the RXDMAEN bit in
         // the I2C_CR1 register. Data is loaded from the I2C_RXDR register to an SRAM area
@@ -703,10 +705,13 @@ where
         match dma_periph {
             DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
                 cfg_channel(
                     &mut regs,
-                    _channel,
-                    &self.regs.rxdr as *const _ as u32,
+                    channel,
+                    unsafe { &self.regs.rxdr as *const _ as u32 },
                     ptr as u32,
                     num_data,
                     Direction::ReadFromPeriph,
@@ -718,10 +723,13 @@ where
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
             DmaPeriph::Dma2 => {
                 let mut regs = unsafe { &(*DMA2::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
                 cfg_channel(
                     &mut regs,
-                    _channel,
-                    &self.regs.rxdr as *const _ as u32,
+                    channel,
+                    unsafe { &self.regs.rxdr as *const _ as u32 },
                     ptr as u32,
                     num_data,
                     Direction::ReadFromPeriph,

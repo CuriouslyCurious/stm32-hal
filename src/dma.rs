@@ -22,11 +22,11 @@ use core::{
 
 cfg_if! {
     if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
-        use crate::pac::{dma as dma1, DMA as DMA1};
+        use crate::pac::{dma::{self as dma1, RegisterBlock}, DMA as DMA1};
     } else if #[cfg(feature = "f3x4")] {
-        use crate::pac::{dma1, DMA1};
+        use crate::pac::{dma1::{self, RegisterBlock}, DMA1};
     } else {
-        use crate::pac::{dma1, DMA1, DMA2};
+        use crate::pac::{dma1::{self, RegisterBlock}, DMA1, DMA2};
         #[cfg(not(feature = "f3"))]
         use crate::pac::dma2;
     }
@@ -762,7 +762,7 @@ pub struct Dma<D> {
 
 impl<D> Dma<D>
 where
-    D: Deref<Target = dma1::RegisterBlock>,
+    D: Deref<Target = RegisterBlock>,
 {
     /// Initialize a DMA peripheral, including enabling and resetting
     /// its RCC peripheral clock.
@@ -1641,7 +1641,7 @@ pub fn stop(periph: DmaPeriph, channel: DmaChannel) {
 
 fn clear_interrupt_internal<D>(regs: &mut D, channel: DmaChannel, interrupt: DmaInterrupt)
 where
-    D: Deref<Target = dma1::RegisterBlock>,
+    D: Deref<Target = RegisterBlock>,
 {
     cfg_if! {
         if #[cfg(any(feature = "g4", feature = "wl"))] {
@@ -1802,7 +1802,7 @@ where
 #[cfg(not(feature = "h7"))]
 fn enable_interrupt_internal<D>(regs: &mut D, channel: DmaChannel, interrupt: DmaInterrupt)
 where
-    D: Deref<Target = dma1::RegisterBlock>,
+    D: Deref<Target = RegisterBlock>,
 {
     // Can only be set when the channel is disabled.
     match channel {
@@ -1890,7 +1890,7 @@ where
 #[cfg(not(feature = "h7"))]
 fn disable_interrupt_internal<D>(regs: &mut D, channel: DmaChannel, interrupt: DmaInterrupt)
 where
-    D: Deref<Target = dma1::RegisterBlock>,
+    D: Deref<Target = RegisterBlock>,
 {
     // Can only be set when the channel is disabled.
     match channel {
@@ -1977,7 +1977,7 @@ where
 #[cfg(feature = "h7")]
 fn enable_interrupt_internal<D>(regs: &mut D, channel: DmaChannel, interrupt: DmaInterrupt)
 where
-    D: Deref<Target = dma1::RegisterBlock>,
+    D: Deref<Target = RegisterBlock>,
 {
     // Can only be set when the channel is disabled.
     let cr = &regs.st[channel as usize].cr;
@@ -1996,7 +1996,7 @@ where
 #[cfg(feature = "h7")]
 fn disable_interrupt_internal<D>(regs: &mut D, channel: DmaChannel, interrupt: DmaInterrupt)
 where
-    D: Deref<Target = dma1::RegisterBlock>,
+    D: Deref<Target = RegisterBlock>,
 {
     // Can only be set when the channel is disabled.
     let cr = &regs.st[channel as usize].cr;

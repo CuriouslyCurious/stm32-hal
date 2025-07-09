@@ -13,19 +13,23 @@ use core::ops::Deref;
 
 use cfg_if::cfg_if;
 
-#[cfg(any(feature = "f3", feature = "l4"))]
-use crate::dma::DmaInput;
+cfg_if! {
+    if #[cfg(all(feature = "g0", not(any(feature = "g0b1", feature = "g0c1"))))] {
+        use crate::pac::{DMA as DMA1};
+    } else if #[cfg(feature = "f3x4")] {
+        use crate::pac::DMA1;
+    } else if #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))] {
+        use crate::pac::{DMA1, DMA2};
+    }
+}
+
 #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))]
-use crate::dma::{self, ChannelCfg, DmaChannel};
-#[cfg(feature = "g0")]
-use crate::pac::DMA as DMA1;
-#[cfg(not(any(feature = "g0", feature = "h5")))]
-use crate::pac::DMA1;
+use crate::dma::{ChannelCfg, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel};
 use crate::{
     MAX_ITERS,
     clocks::Clocks,
     pac::{self, RCC},
-    usart::{OverSampling, Parity, StopBits, UartError, UsartConfig, UsartInterrupt},
+    usart::{Parity, UartError, UsartConfig, UsartInterrupt},
     util::{BaudPeriph, RccPeriph},
 };
 
@@ -375,12 +379,12 @@ where
     /// Transmit data using DMA. (L44 RM, section 38.5.15)
     /// Note that the `channel` argument is unused on F3 and L4, since it is hard-coded,
     /// and can't be configured using the DMAMUX peripheral. (`dma::mux()` fn).
-    pub unsafe fn write_dma(
+    pub fn write_dma(
         &mut self,
         buf: &[u8],
         channel: DmaChannel,
         channel_cfg: ChannelCfg,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
     ) {
         let (ptr, len) = (buf.as_ptr(), buf.len());
 
@@ -389,10 +393,8 @@ where
 
         #[cfg(any(feature = "f3", feature = "l4"))]
         let channel = R::write_chan();
-        #[cfg(feature = "l4")]
-        let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
-        #[cfg(feature = "l4")]
-        R::write_sel(&mut dma_regs);
+
+        let periph_addr = unsafe { &self.regs.tdr as *const _ as u32 };
 
         #[cfg(feature = "h7")]
         let num_data = len as u32;
@@ -410,41 +412,47 @@ where
         self.regs.icr.write(|w| w.tccf().set_bit());
 
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
-                dma::cfg_channel(
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
+                cfg_channel(
                     &mut regs,
                     channel,
                     // 1. Write the USART_TDR register address in the DMA control register to configure it as
                     // the destination of the transfer. The data is moved to this address from memory after
                     // each TXE event.
-                    &self.regs.tdr as *const _ as u32,
                     // 2. Write the memory address in the DMA control register to configure it as the source of
                     // the transfer. The data is loaded into the USART_TDR register from this memory area
                     // after each TXE event.
+                    periph_addr,
                     ptr as u32,
                     // 3. Configure the total number of bytes to be transferred to the DMA control register.
                     num_data,
-                    dma::Direction::ReadFromMem,
+                    Direction::ReadFromMem,
                     // 4. Configure the channel priority in the DMA control register
                     // (Handled by `ChannelCfg::default())`
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
-            dma::DmaPeriph::Dma2 => {
+            DmaPeriph::Dma2 => {
                 let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                dma::cfg_channel(
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
+                cfg_channel(
                     &mut regs,
                     channel,
-                    &self.regs.tdr as *const _ as u32,
+                    periph_addr,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromMem,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromMem,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }
@@ -471,21 +479,19 @@ where
     /// Receive data using DMA. (L44 RM, section 38.5.15; G4 RM section 37.5.19.
     /// Note that the `channel` argument is unused on F3 and L4, since it is hard-coded,
     /// and can't be configured using the DMAMUX peripheral. (`dma::mux()` fn).
-    pub unsafe fn read_dma(
+    pub fn read_dma(
         &mut self,
         buf: &mut [u8],
         channel: DmaChannel,
         channel_cfg: ChannelCfg,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
     ) {
         let (ptr, len) = (buf.as_mut_ptr(), buf.len());
 
         #[cfg(any(feature = "f3", feature = "l4"))]
         let channel = R::read_chan();
-        #[cfg(feature = "l4")]
-        let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
-        #[cfg(feature = "l4")]
-        R::write_sel(&mut dma_regs);
+
+        let periph_addr = unsafe { &self.regs.rdr as *const _ as u32 };
 
         #[cfg(feature = "h7")]
         let num_data = len as u32;
@@ -496,39 +502,45 @@ where
         self.regs.cr3.modify(|_, w| w.dmar().set_bit());
 
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
-                dma::cfg_channel(
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
+                cfg_channel(
                     &mut regs,
                     channel,
                     // 1. Write the USART_RDR register address in the DMA control register to configure it as
                     // the source of the transfer. The data is moved from this address to the memory after
                     // each RXNE event.
-                    &self.regs.rdr as *const _ as u32,
+                    periph_addr,
                     // 2. Write the memory address in the DMA control register to configure it as the destination
                     // of the transfer. The data is loaded from USART_RDR to this memory area after each
                     // RXNE event.
                     ptr as u32,
                     // 3. Configure the total number of bytes to be transferred to the DMA control register.
                     num_data,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromPeriph,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
-            dma::DmaPeriph::Dma2 => {
+            DmaPeriph::Dma2 => {
                 let mut regs = unsafe { &(*pac::DMA2::ptr()) };
-                dma::cfg_channel(
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
+                cfg_channel(
                     &mut regs,
                     channel,
-                    &self.regs.rdr as *const _ as u32,
+                    periph_addr,
                     ptr as u32,
                     num_data,
-                    dma::Direction::ReadFromPeriph,
-                    dma::DataSize::S8,
-                    dma::DataSize::S8,
+                    Direction::ReadFromPeriph,
+                    DataSize::S8,
+                    DataSize::S8,
                     channel_cfg,
                 );
             }

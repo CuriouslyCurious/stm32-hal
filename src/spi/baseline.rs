@@ -270,7 +270,7 @@ where
     /// Note that the `channel` argument is unused on F3 and L4, since it is hard-coded,
     /// and can't be configured using the DMAMUX peripheral. (`dma::mux()` fn).
     #[cfg(not(any(feature = "f4", feature = "l552")))]
-    pub unsafe fn read_dma(
+    pub fn read_dma(
         &mut self,
         buf: &mut [u8],
         _channel: DmaChannel,
@@ -332,10 +332,11 @@ where
     /// Note that the `channel` argument is unused on F3 and L4, since it is hard-coded,
     /// and can't be configured using the DMAMUX peripheral. (`dma::mux()` fn).
     #[cfg(not(any(feature = "f4", feature = "l552")))]
-    pub unsafe fn write_dma(
+    #[allow(unused_variables)]
+    pub fn write_dma(
         &mut self,
         buf: &[u8],
-        _channel: DmaChannel,
+        channel: DmaChannel,
         channel_cfg: ChannelCfg,
         dma_periph: DmaPeriph,
     ) {
@@ -360,21 +361,20 @@ where
 
         // 2. Enable DMA streams for Tx and Rx in DMA registers, if the streams are used.
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let _channel = R::write_chan();
-        #[cfg(feature = "l4")]
-        let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
-        #[cfg(feature = "l4")]
-        R::write_sel(&mut dma_regs);
+        let channel = R::write_chan();
 
-        let periph_addr = &self.regs.dr as *const _ as u32;
+        let periph_addr = unsafe { &self.regs.dr as *const _ as u32 };
         let num_data = len as u16;
 
         match dma_periph {
             DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
                 cfg_channel(
                     &mut regs,
-                    _channel,
+                    channel,
                     periph_addr,
                     ptr as u32,
                     num_data,
@@ -387,9 +387,12 @@ where
             #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
             DmaPeriph::Dma2 => {
                 let mut regs = unsafe { &(*DMA2::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
                 cfg_channel(
                     &mut regs,
-                    _channel,
+                    channel,
                     periph_addr,
                     ptr as u32,
                     num_data,
@@ -411,105 +414,18 @@ where
     /// Transfer data from DMA; this is the basic reading API, using both write and read transfers:
     /// It performs a write with register data, and reads to a buffer.
     #[cfg(not(any(feature = "f4", feature = "l552")))]
-    pub unsafe fn transfer_dma(
+    pub fn transfer_dma(
         &mut self,
         buf_write: &[u8],
         buf_read: &mut [u8],
-        _channel_write: DmaChannel,
-        _channel_read: DmaChannel,
+        channel_write: DmaChannel,
+        channel_read: DmaChannel,
         channel_cfg_write: ChannelCfg,
         channel_cfg_read: ChannelCfg,
         dma_periph: DmaPeriph,
     ) {
-        // todo: Accept u16 words too.
-        let (ptr_write, len_write) = (buf_write.as_ptr(), buf_write.len());
-        let (ptr_read, len_read) = (buf_read.as_mut_ptr(), buf_read.len());
-
-        self.regs.cr1.modify(|_, w| w.spe().clear_bit());
-
-        // todo: DRY here, with `write_dma`, and `read_dma`.
-
-        let periph_addr_write = &self.regs.dr as *const _ as u32;
-        let periph_addr_read = &self.regs.dr as *const _ as u32;
-
-        let num_data_write = len_write as u16;
-        let num_data_read = len_read as u16;
-
-        // Be careful - order of enabling Rx and Tx may matter, along with other things like when we
-        // enable the channels, and the SPI periph.
-        self.regs.cr2.modify(|_, w| w.rxdmaen().set_bit());
-
-        #[cfg(any(feature = "f3", feature = "l4"))]
-        let _channel_write = R::write_chan();
-        #[cfg(feature = "l4")]
-        let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
-        #[cfg(feature = "l4")]
-        R::write_sel(&mut dma_regs);
-
-        #[cfg(any(feature = "f3", feature = "l4"))]
-        let _channel_read = R::read_chan();
-        #[cfg(feature = "l4")]
-        let mut dma_regs = unsafe { &(*DMA1::ptr()) }; // todo: Hardcoded DMA1
-        #[cfg(feature = "l4")]
-        R::write_sel(&mut dma_regs);
-        match dma_periph {
-            DmaPeriph::Dma1 => {
-                let mut regs = unsafe { &(*DMA1::ptr()) };
-                cfg_channel(
-                    &mut regs,
-                    _channel_write,
-                    periph_addr_write,
-                    ptr_write as u32,
-                    num_data_write,
-                    Direction::ReadFromMem,
-                    DmaDataSize::S8,
-                    DmaDataSize::S8,
-                    channel_cfg_write,
-                );
-
-                cfg_channel(
-                    &mut regs,
-                    _channel_read,
-                    periph_addr_read,
-                    ptr_read as u32,
-                    num_data_read,
-                    Direction::ReadFromPeriph,
-                    DmaDataSize::S8,
-                    DmaDataSize::S8,
-                    channel_cfg_read,
-                );
-            }
-            #[cfg(not(any(feature = "f3x4", feature = "g0", feature = "wb")))]
-            DmaPeriph::Dma2 => {
-                let mut regs = unsafe { &(*DMA2::ptr()) };
-                cfg_channel(
-                    &mut regs,
-                    _channel_write,
-                    periph_addr_write,
-                    ptr_write as u32,
-                    num_data_write,
-                    Direction::ReadFromMem,
-                    DmaDataSize::S8,
-                    DmaDataSize::S8,
-                    channel_cfg_write,
-                );
-
-                cfg_channel(
-                    &mut regs,
-                    _channel_read,
-                    periph_addr_read,
-                    ptr_read as u32,
-                    num_data_read,
-                    Direction::ReadFromPeriph,
-                    DmaDataSize::S8,
-                    DmaDataSize::S8,
-                    channel_cfg_read,
-                );
-            }
-        }
-
-        self.regs.cr2.modify(|_, w| w.txdmaen().set_bit());
-        self.regs.cr1.modify(|_, w| w.spe().set_bit());
+        self.write_dma(buf_write, channel_write, channel_cfg_write, dma_periph);
+        self.read_dma(buf_read, channel_read, channel_cfg_read, dma_periph);
     }
 
     /// Enable an interrupt. Note that unlike on other peripherals, there's no explicit way to

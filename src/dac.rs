@@ -24,8 +24,12 @@ cfg_if! {
 
 #[cfg(any(feature = "f3", feature = "l4"))]
 use crate::dma::DmaInput;
+#[cfg(feature = "l4")]
+use crate::dma::channel_select;
 #[cfg(not(any(feature = "f4", feature = "l552")))]
-use crate::dma::{self, ChannelCfg, DmaChannel};
+use crate::dma::{
+    ChannelCfg, DataSize as DmaDataSize, Direction, DmaChannel, DmaPeriph, cfg_channel,
+};
 use crate::{pac::RCC, util::RccPeriph};
 
 #[derive(Clone, Copy)]
@@ -432,13 +436,14 @@ where
     /// Note that the `dma_channel` argument is unused on F3 and L4, since it is hard-coded,
     /// and can't be configured using the DMAMUX peripheral. (`dma::mux()` fn).
     #[cfg(not(any(feature = "f4", feature = "l552")))]
-    pub unsafe fn write_dma(
+    #[allow(unused_variables)]
+    pub fn write_dma(
         &mut self,
         buf: &[u16],
         dac_channel: DacChannel,
-        _dma_channel: DmaChannel,
+        dma_channel: DmaChannel,
         channel_cfg: ChannelCfg,
-        dma_periph: dma::DmaPeriph,
+        dma_periph: DmaPeriph,
         // dma: &mut Dma<D>,
     ) {
         // where
@@ -447,25 +452,25 @@ where
         let (ptr, len) = (buf.as_ptr(), buf.len());
 
         #[cfg(any(feature = "f3", feature = "l4"))]
-        let _dma_channel = match dac_channel {
+        let dma_channel = match dac_channel {
             DacChannel::C1 => DmaInput::Dac1Ch1.dma1_channel(),
             DacChannel::C2 => DmaInput::Dac1Ch2.dma1_channel(),
         };
 
         #[cfg(feature = "l4")]
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
                 match dac_channel {
-                    DacChannel::C1 => dma::channel_select(&mut regs, DmaInput::Dac1Ch1),
-                    DacChannel::C2 => dma::channel_select(&mut regs, DmaInput::Dac1Ch2),
+                    DacChannel::C1 => channel_select(&mut regs, DmaInput::Dac1Ch1),
+                    DacChannel::C2 => channel_select(&mut regs, DmaInput::Dac1Ch2),
                 }
             }
-            dma::DmaPeriph::Dma2 => {
+            DmaPeriph::Dma2 => {
                 let mut regs = unsafe { &(*DMA2::ptr()) };
                 match dac_channel {
-                    DacChannel::C1 => dma::channel_select(&mut regs, DmaInput::Dac1Ch1),
-                    DacChannel::C2 => dma::channel_select(&mut regs, DmaInput::Dac1Ch2),
+                    DacChannel::C1 => channel_select(&mut regs, DmaInput::Dac1Ch1),
+                    DacChannel::C2 => channel_select(&mut regs, DmaInput::Dac1Ch2),
                 };
             }
         }
@@ -515,33 +520,37 @@ where
         // in the DAC_CR register is enabled.
 
         #[cfg(feature = "g4")]
-        let periph_addr = match dac_channel {
-            DacChannel::C1 => match &self.cfg.bits {
-                DacBits::EightR => &self.regs.dac_dhr8r1 as *const _ as u32,
-                DacBits::TwelveL => &self.regs.dac_dhr12l1 as *const _ as u32,
-                DacBits::TwelveR => &self.regs.dac_dhr12r1 as *const _ as u32,
-            },
-            #[cfg(not(feature = "wl"))]
-            DacChannel::C2 => match &self.cfg.bits {
-                DacBits::EightR => &self.regs.dac_dhr8r2 as *const _ as u32,
-                DacBits::TwelveL => &self.regs.dac_dhr12l2 as *const _ as u32,
-                DacBits::TwelveR => &self.regs.dac_dhr12r2 as *const _ as u32,
-            },
+        let periph_addr = unsafe {
+            match dac_channel {
+                DacChannel::C1 => match &self.cfg.bits {
+                    DacBits::EightR => &self.regs.dac_dhr8r1 as *const _ as u32,
+                    DacBits::TwelveL => &self.regs.dac_dhr12l1 as *const _ as u32,
+                    DacBits::TwelveR => &self.regs.dac_dhr12r1 as *const _ as u32,
+                },
+                #[cfg(not(feature = "wl"))]
+                DacChannel::C2 => match &self.cfg.bits {
+                    DacBits::EightR => &self.regs.dac_dhr8r2 as *const _ as u32,
+                    DacBits::TwelveL => &self.regs.dac_dhr12l2 as *const _ as u32,
+                    DacBits::TwelveR => &self.regs.dac_dhr12r2 as *const _ as u32,
+                },
+            }
         };
 
         #[cfg(not(feature = "g4"))]
-        let periph_addr = match dac_channel {
-            DacChannel::C1 => match &self.cfg.bits {
-                DacBits::EightR => &self.regs.dhr8r1 as *const _ as u32,
-                DacBits::TwelveL => &self.regs.dhr12l1 as *const _ as u32,
-                DacBits::TwelveR => &self.regs.dhr12r1 as *const _ as u32,
-            },
-            #[cfg(not(feature = "wl"))]
-            DacChannel::C2 => match &self.cfg.bits {
-                DacBits::EightR => &self.regs.dhr8r2 as *const _ as u32,
-                DacBits::TwelveL => &self.regs.dhr12l2 as *const _ as u32,
-                DacBits::TwelveR => &self.regs.dhr12r2 as *const _ as u32,
-            },
+        let periph_addr = unsafe {
+            match dac_channel {
+                DacChannel::C1 => match &self.cfg.bits {
+                    DacBits::EightR => &self.regs.dhr8r1 as *const _ as u32,
+                    DacBits::TwelveL => &self.regs.dhr12l1 as *const _ as u32,
+                    DacBits::TwelveR => &self.regs.dhr12r1 as *const _ as u32,
+                },
+                #[cfg(not(feature = "wl"))]
+                DacChannel::C2 => match &self.cfg.bits {
+                    DacBits::EightR => &self.regs.dhr8r2 as *const _ as u32,
+                    DacBits::TwelveL => &self.regs.dhr12l2 as *const _ as u32,
+                    DacBits::TwelveR => &self.regs.dhr12r2 as *const _ as u32,
+                },
+            }
         };
 
         #[cfg(feature = "h7")]
@@ -550,32 +559,32 @@ where
         let len = len as u16;
 
         match dma_periph {
-            dma::DmaPeriph::Dma1 => {
+            DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
-                    _dma_channel,
+                    dma_channel,
                     periph_addr,
                     ptr as u32,
                     len,
-                    dma::Direction::ReadFromMem,
-                    dma::DataSize::S16,
-                    dma::DataSize::S16,
+                    Direction::ReadFromMem,
+                    DmaDataSize::S16,
+                    DmaDataSize::S16,
                     channel_cfg,
                 );
             }
             #[cfg(not(any(feature = "f3x4", feature = "g0")))]
-            dma::DmaPeriph::Dma2 => {
+            DmaPeriph::Dma2 => {
                 let mut regs = unsafe { &(*DMA2::ptr()) };
-                dma::cfg_channel(
+                cfg_channel(
                     &mut regs,
-                    _dma_channel,
+                    dma_channel,
                     periph_addr,
                     ptr as u32,
                     len,
-                    dma::Direction::ReadFromMem,
-                    dma::DataSize::S16,
-                    dma::DataSize::S16,
+                    Direction::ReadFromMem,
+                    DmaDataSize::S16,
+                    DmaDataSize::S16,
                     channel_cfg,
                 );
             }

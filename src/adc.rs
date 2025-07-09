@@ -21,7 +21,6 @@ use crate::dma::DmaInput;
 use crate::dma::channel_select;
 #[cfg(not(any(feature = "h5", feature = "l552")))]
 use crate::dma::{ChannelCfg, Circular, DataSize, Direction, DmaChannel, DmaPeriph, cfg_channel};
-#[cfg(any(feature = "l552", feature = "l562"))]
 use crate::{
     pac::{self, RCC},
     util::rcc_en_reset,
@@ -1012,14 +1011,15 @@ macro_rules! hal {
                 });
             }
 
-            #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))]
             /// Take a reading, using DMA. Sets conversion sequence; no need to set it directly.
             /// Note that the `channel` argument is unused on F3 and L4, since it is hard-coded,
             /// and can't be configured using the DMAMUX peripheral. (`dma::mux()` fn).
-            pub unsafe fn read_dma(
+            #[cfg(not(any(feature = "f4", feature = "l552", feature = "h5")))]
+            #[allow(unused_variables)]
+            pub fn read_dma(
                 &mut self, buf: &mut [u16],
                 adc_channels: &[u8],
-                _dma_channel: DmaChannel,
+                dma_channel: DmaChannel,
                 channel_cfg: ChannelCfg,
                 dma_periph: DmaPeriph,
             ) {
@@ -1044,7 +1044,7 @@ macro_rules! hal {
                 // L44 RM, Table 41. "DMA1 requests for each channel
                 // todo: DMA2 support.
                 #[cfg(any(feature = "f3", feature = "l4"))]
-                let _dma_channel = match self.device {
+                let dma_channel = match self.device {
                     AdcDevice::One => DmaInput::Adc1.dma1_channel(),
                     AdcDevice::Two => DmaInput::Adc2.dma1_channel(),
                     _ => panic!("DMA on ADC beyond 2 is not supported. If it is for your MCU, please submit an issue \
@@ -1079,6 +1079,8 @@ macro_rules! hal {
                 self.set_sequence_len(seq_len);
 
                 self.regs.cr.modify(|_, w| w.adstart().set_bit());  // Start
+
+                let periph_addr = unsafe { &self.regs.dr as *const _ as u32 };
 
                 // Since converted channel values are stored into a unique data register, it is useful to use
                 // DMA for conversion of more than one channel. This avoids the loss of the data already
@@ -1126,8 +1128,8 @@ macro_rules! hal {
                         let mut regs = unsafe { &(*DMA1::ptr()) };
                         cfg_channel(
                             &mut regs,
-                            _dma_channel,
-                            &self.regs.dr as *const _ as u32,
+                            dma_channel,
+                            periph_addr,
                             ptr as u32,
                             num_data,
                             Direction::ReadFromPeriph,
@@ -1141,8 +1143,8 @@ macro_rules! hal {
                         let mut regs = unsafe { &(*DMA2::ptr()) };
                         cfg_channel(
                             &mut regs,
-                            _dma_channel,
-                            &self.regs.dr as *const _ as u32,
+                            dma_channel,
+                            periph_addr,
                             ptr as u32,
                             num_data,
                             Direction::ReadFromPeriph,

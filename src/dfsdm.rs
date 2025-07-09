@@ -1168,22 +1168,18 @@ where
     /// to discard the other fields. (The integer signing is unchanged, since the 24-bit integer data
     /// is aligned to the left of the 32-bit register, which maps to an `i32` here.)
     #[cfg(not(any(feature = "f4", feature = "l552")))]
-    pub unsafe fn read_dma(
+    pub fn read_dma(
         &mut self,
         buf: &mut [i32],
         filter: Filter,
-        dma_channel: DmaChannel,
+        channel: DmaChannel,
         channel_cfg: ChannelCfg,
         dma_periph: DmaPeriph,
-        // dma: &mut Dma<D>,
     ) {
-        // where
-        //     D: Deref<Target = dma_p::RegisterBlock>,
-        // {
         let (ptr, len) = (buf.as_mut_ptr(), buf.len());
 
         #[cfg(feature = "f3")]
-        let dma_channel = match filter {
+        let channel = match filter {
             Filter::F0 => DmaInput::Dfsdm1F0.dma1_channel(),
             Filter::F1 => DmaInput::Dfsdm1F1.dma1_channel(),
         };
@@ -1265,59 +1261,61 @@ where
             }
         }
 
-        let periph_addr = match filter {
-            Filter::F0 => {
-                cfg_if! {
-                    if #[cfg(any(feature = "l5"))] {
-                        let rdatar = &self.regs.flt0rdatar;
-                    } else if #[cfg(any(feature = "l4"))] {
-                        let rdatar = &self.regs.dfsdm0_rdatar;
-                    } else {
-                        let rdatar = &self.regs.flt0.rdatar;
+        let periph_addr = unsafe {
+            match filter {
+                Filter::F0 => {
+                    cfg_if! {
+                        if #[cfg(any(feature = "l5"))] {
+                            let rdatar = &self.regs.flt0rdatar;
+                        } else if #[cfg(any(feature = "l4"))] {
+                            let rdatar = &self.regs.dfsdm0_rdatar;
+                        } else {
+                            let rdatar = &self.regs.flt0.rdatar;
+                        }
                     }
+                    &rdatar as *const _ as u32
                 }
-                &rdatar as *const _ as u32
-            }
-            #[cfg(feature = "l4x6")]
-            Filter::F1 => 0,
-            #[cfg(not(feature = "l4x6"))]
-            Filter::F1 => {
-                cfg_if! {
-                    if #[cfg(any(feature = "l5"))] {
-                        let rdatar = &self.regs.flt1rdatar;
-                    } else if #[cfg(any(feature = "l4"))] {
-                        // let rdatar = &self.regs.dfsdm1_rdatar;
-                    } else {
-                        let rdatar = &self.regs.flt1.rdatar;
+                #[cfg(feature = "l4x6")]
+                Filter::F1 => 0,
+                #[cfg(not(feature = "l4x6"))]
+                Filter::F1 => {
+                    cfg_if! {
+                        if #[cfg(any(feature = "l5"))] {
+                            let rdatar = &self.regs.flt1rdatar;
+                        } else if #[cfg(any(feature = "l4"))] {
+                            // let rdatar = &self.regs.dfsdm1_rdatar;
+                        } else {
+                            let rdatar = &self.regs.flt1.rdatar;
+                        }
                     }
+                    &rdatar as *const _ as u32
                 }
-                &rdatar as *const _ as u32
-            }
 
-            Filter::F2 => {
-                cfg_if! {
-                    if #[cfg(any(feature = "l5"))] {
-                        let rdatar = &self.regs.flt2rdatar;
-                    } else if #[cfg(any(feature = "l4"))] {
-                        let rdatar = &self.regs.dfsdm2_rdatar;
-                    } else {
-                        let rdatar = &self.regs.flt2.rdatar;
+                Filter::F2 => {
+                    cfg_if! {
+                        if #[cfg(any(feature = "l5"))] {
+                            let rdatar = &self.regs.flt2rdatar;
+                        } else if #[cfg(any(feature = "l4"))] {
+                            let rdatar = &self.regs.dfsdm2_rdatar;
+                        } else {
+                            let rdatar = &self.regs.flt2.rdatar;
+                        }
                     }
+                    &rdatar as *const _ as u32
                 }
-                &rdatar as *const _ as u32
-            }
 
-            Filter::F3 => {
-                cfg_if! {
-                    if #[cfg(any(feature = "l5"))] {
-                        let rdatar = &self.regs.flt3rdatar;
-                    } else if #[cfg(any(feature = "l4"))] {
-                        let rdatar = &self.regs.dfsdm3_rdatar;
-                    } else {
-                        let rdatar = &self.regs.flt3.rdatar;
+                Filter::F3 => {
+                    cfg_if! {
+                        if #[cfg(any(feature = "l5"))] {
+                            let rdatar = &self.regs.flt3rdatar;
+                        } else if #[cfg(any(feature = "l4"))] {
+                            let rdatar = &self.regs.dfsdm3_rdatar;
+                        } else {
+                            let rdatar = &self.regs.flt3.rdatar;
+                        }
                     }
+                    &rdatar as *const _ as u32
                 }
-                &rdatar as *const _ as u32
             }
         };
 
@@ -1328,19 +1326,22 @@ where
         self.start_conversion(filter);
 
         #[cfg(feature = "h7")]
-        let len = len as u32;
+        let num_data = len as u32;
         #[cfg(not(feature = "h7"))]
-        let len = len as u16;
+        let num_data = len as u16;
 
         match dma_periph {
             DmaPeriph::Dma1 => {
                 let mut regs = unsafe { &(*DMA1::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
                 cfg_channel(
                     &mut regs,
-                    dma_channel,
+                    channel,
                     periph_addr,
                     ptr as u32,
-                    len,
+                    num_data,
                     Direction::ReadFromPeriph,
                     DataSize::S32, // For 24 bits
                     DataSize::S32,
@@ -1349,12 +1350,15 @@ where
             }
             DmaPeriph::Dma2 => {
                 let mut regs = unsafe { &(*DMA2::ptr()) };
+                #[cfg(feature = "l4")]
+                R::write_sel(&mut regs);
+
                 cfg_channel(
                     &mut regs,
-                    dma_channel,
+                    channel,
                     periph_addr,
                     ptr as u32,
-                    len,
+                    num_data,
                     Direction::ReadFromPeriph,
                     DataSize::S32, // For 24 bits
                     DataSize::S32,
